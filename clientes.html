@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Clientes Lentes – Mundial 2026</title>
+  <style>
+    :root {
+      --navy:  #0d1b4b;
+      --gold:  #f5a800;
+      --green: #22c55e;
+      --red:   #ef4444;
+      --gray:  #94a3b8;
+      --bg:    #f0f4f8;
+      --card:  #ffffff;
+      --text:  #1e293b;
+      --border:#e2e8f0;
+    }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); }
+
+    nav {
+      background:var(--navy); padding:0 24px;
+      display:flex; align-items:center;
+      position:sticky; top:0; z-index:100;
+      box-shadow:0 2px 8px rgba(0,0,0,.4);
+    }
+    .nav-brand { color:var(--gold); font-weight:700; font-size:1.1rem; padding:16px 24px 16px 0; border-right:1px solid rgba(255,255,255,.15); margin-right:8px; white-space:nowrap; }
+    .nav-brand span { color:#fff; font-weight:400; }
+    nav a { color:rgba(255,255,255,.75); text-decoration:none; padding:16px 18px; font-size:.9rem; transition:all .2s; border-bottom:3px solid transparent; }
+    nav a:hover  { color:#fff; background:rgba(255,255,255,.06); }
+    nav a.active { color:var(--gold); border-bottom-color:var(--gold); font-weight:600; }
+
+    .hero { background:linear-gradient(135deg, var(--navy) 0%, #1a3a8f 100%); padding:28px 24px; color:#fff; }
+    .hero h1 { font-size:1.5rem; font-weight:700; margin-bottom:4px; }
+    .hero p  { color:rgba(255,255,255,.7); font-size:.9rem; }
+
+    .stats-bar { display:flex; gap:10px; flex-wrap:wrap; padding:12px 24px; background:#fff; border-bottom:1px solid var(--border); }
+    .stat-chip { background:var(--bg); border:1px solid var(--border); border-radius:20px; padding:5px 14px; font-size:.81rem; display:flex; align-items:center; gap:5px; }
+    .stat-chip b { color:var(--navy); }
+
+    .toolbar { padding:12px 24px; background:#fff; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .search-box { flex:1; min-width:180px; max-width:320px; border:1px solid var(--border); border-radius:8px; padding:7px 12px; font-size:.88rem; outline:none; }
+    .search-box:focus { border-color:var(--navy); }
+    select.filter-sel { border:1px solid var(--border); border-radius:8px; padding:7px 10px; font-size:.88rem; outline:none; background:#fff; cursor:pointer; }
+    select.filter-sel:focus { border-color:var(--navy); }
+    .btn-refresh { background:var(--navy); color:#fff; border:none; border-radius:8px; padding:7px 16px; font-size:.88rem; cursor:pointer; display:flex; align-items:center; gap:6px; }
+    .btn-refresh:hover { background:#1a3a8f; }
+    .btn-refresh:disabled { opacity:.5; cursor:default; }
+    .last-update { font-size:.78rem; color:var(--gray); margin-left:auto; }
+
+    /* TABLA CLIENTES */
+    .table-wrap { padding:20px 24px; }
+
+    .cliente-card {
+      background:var(--card); border-radius:10px; margin-bottom:12px;
+      box-shadow:0 1px 4px rgba(0,0,0,.08); overflow:hidden;
+    }
+    .cliente-header {
+      display:grid; grid-template-columns:32px 1fr auto auto auto auto auto auto;
+      align-items:center; gap:12px;
+      padding:12px 16px; cursor:pointer;
+      transition:background .15s; user-select:none;
+    }
+    .cliente-header:hover { background:#f8fafc; }
+    .cliente-rank { font-weight:800; color:var(--navy); font-size:.9rem; text-align:center; }
+    .cliente-email { font-weight:600; color:var(--navy); font-size:.9rem; }
+    .cliente-pais  { font-size:.8rem; color:var(--gray); }
+    .badge-cajas { display:inline-block; border-radius:20px; padding:3px 12px; font-size:.82rem; font-weight:700; }
+    .badge-6up { background:#fde68a; color:#78350f; }
+    .badge-4   { background:#dbeafe; color:#1e40af; }
+    .badge-2   { background:#dcfce7; color:#166534; }
+    .col-ordenes { font-size:.82rem; color:var(--gray); white-space:nowrap; }
+    .toggle-icon { font-size:.8rem; color:var(--gray); transition:transform .2s; }
+    .hdr-order { font-size:.8rem; color:var(--gray); white-space:nowrap; }
+    .hdr-order b { color:var(--text); }
+    .hdr-fab { font-size:.75rem; background:#f0fdf4; color:#166534; border-radius:10px; padding:2px 9px; font-weight:600; white-space:nowrap; }
+    .orden-fab { font-size:.78rem; color:#166534; font-weight:500; }
+    .cliente-card.open .toggle-icon { transform:rotate(180deg); }
+
+    /* DETALLE ÓRDENES */
+    .ordenes-wrap { display:none; border-top:1px solid var(--border); }
+    .cliente-card.open .ordenes-wrap { display:block; }
+
+    .orden-row {
+      padding:10px 16px 10px 60px;
+      border-bottom:1px solid var(--border);
+    }
+    .orden-row:last-child { border-bottom:none; }
+    .orden-meta { display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:0; }
+    .orden-num  { font-weight:600; font-size:.85rem; color:var(--navy); }
+    .orden-fecha { font-size:.8rem; color:var(--gray); }
+    .orden-cajas { font-size:.8rem; background:#f0fdf4; color:#166534; border-radius:12px; padding:2px 8px; font-weight:600; }
+
+
+    .productos-list { display:block; margin-top:8px; }
+    .prod-item {
+      display:flex; align-items:center; gap:10px;
+      padding:4px 0; font-size:.82rem;
+      border-top:1px dashed var(--border);
+    }
+    .prod-item:first-child { border-top:none; }
+    .prod-tipo { font-size:.72rem; border-radius:10px; padding:1px 7px; font-weight:600; white-space:nowrap; }
+    .tipo-lentes   { background:#ede9fe; color:#5b21b6; }
+    .tipo-solucion { background:#e0f2fe; color:#0369a1; }
+    .tipo-gotas    { background:#fef9c3; color:#854d0e; }
+    .tipo-otro     { background:#f1f5f9; color:#475569; }
+    .prod-nombre { flex:1; color:var(--text); }
+    .prod-marca  { color:var(--gray); font-size:.78rem; }
+    .prod-cant   { font-weight:700; color:var(--navy); min-width:24px; text-align:right; }
+
+    /* EMPTY / LOADING / ERROR */
+    .status-box { text-align:center; padding:64px 24px; color:var(--gray); }
+    .spinner { width:36px; height:36px; border:3px solid var(--border); border-top-color:var(--navy); border-radius:50%; animation:spin .7s linear infinite; margin:0 auto 14px; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+
+    @media(max-width:600px) {
+      .table-wrap { padding:12px; }
+      .cliente-header { grid-template-columns:28px 1fr auto auto auto; }
+      .cliente-pais, .col-ordenes { display:none; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-brand">⚽ Reto de <span>Expertos</span></div>
+  <a href="index.html">📊 Pronósticos</a>
+  <a href="admin.html">📋 Resultados</a>
+  <a href="ranking.html">🏆 Ranking</a>
+  <a href="clientes.html" class="active">👥 Clientes</a>
+</nav>
+
+<div class="hero">
+  <h1>👥 Clientes con 2+ cajas de lentes</h1>
+  <p>LentesPlus · 1 Jun – 19 Jul 2026 · Órdenes completas con cupón</p>
+</div>
+
+<div class="stats-bar" id="statsBar">
+  <div class="stat-chip">⏳ Cargando…</div>
+</div>
+
+<div class="toolbar">
+  <input  class="search-box"  type="text"    id="searchInput"  placeholder="🔍 Buscar por email…"  oninput="applyFilters()"/>
+  <select class="filter-sel"  id="paisFilter" onchange="applyFilters()">
+    <option value="">🌎 Todos los países</option>
+  </select>
+  <select class="filter-sel" id="fabFilter" onchange="applyFilters()">
+    <option value="">🏭 Todos los fabricantes</option>
+  </select>
+  <button class="btn-refresh" id="btnRefresh" onclick="loadClientes()">🔄 Actualizar</button>
+  <span   class="last-update" id="lastUpdate"></span>
+</div>
+
+<div class="table-wrap" id="tableWrap">
+  <div class="status-box"><div class="spinner"></div><p>Consultando Metabase…</p></div>
+</div>
+
+<script>
+// ── banderas emoji por código de país ────────────────────────────────────────
+const FLAGS = {MX:'🇲🇽',CO:'🇨🇴',AR:'🇦🇷',CL:'🇨🇱',PE:'🇵🇪',EC:'🇪🇨',VE:'🇻🇪',BO:'🇧🇴',UY:'🇺🇾',PY:'🇵🇾',CR:'🇨🇷',PA:'🇵🇦',GT:'🇬🇹',HN:'🇭🇳',SV:'🇸🇻',NI:'🇳🇮',DO:'🇩🇴',CU:'🇨🇺',PR:'🇵🇷',US:'🇺🇸'};
+const flag = c => (FLAGS[c] || '🌐') + ' ' + (c || '—');
+
+let allClientes = [];
+const fmtDate = d => d ? new Date(d + 'T12:00:00Z').toLocaleDateString('es-MX',{day:'2-digit',month:'short',timeZone:'UTC'}) : '—';
+
+// ── Transformar filas planas → clientes agrupados ────────────────────────────
+function groupRows(rows) {
+  const map = new Map();
+  for (const r of rows) {
+    if (!map.has(r.customer_id)) {
+      map.set(r.customer_id, {
+        customer_id: r.customer_id,
+        email:       r.email,
+        country:     r.country,
+        total_cajas: r.total_cajas_cliente,
+        total_ordenes: r.total_ordenes_cliente,
+        ordenes: []
+      });
+    }
+    let prods = [];
+    try { prods = JSON.parse(r.productos || '[]'); } catch {}
+    map.get(r.customer_id).ordenes.push({
+      order_number: r.order_number,
+      fecha_recibido:   r.fecha_recibido,
+      fecha_confirmado: r.fecha_confirmado,
+      cajas_orden:  r.cajas_orden,
+      fabricantes:  r.fabricantes || '',
+      productos:    prods.filter(p => p.cantidad > 0 && p.tipo !== null)
+    });
+  }
+  return [...map.values()];
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function badgeClass(n) {
+  if (n >= 6) return 'badge-6up';
+  if (n >= 4) return 'badge-4';
+  return 'badge-2';
+}
+
+function tipoClass(tipo) {
+  if (!tipo) return 'tipo-otro';
+  const t = tipo.toLowerCase();
+  if (t.includes('lente')) return 'tipo-lentes';
+  if (t.includes('solu'))  return 'tipo-solucion';
+  if (t.includes('gota'))  return 'tipo-gotas';
+  return 'tipo-otro';
+}
+
+function renderCliente(c, idx) {
+  const ordenesHtml = c.ordenes.map(o => {
+    const prodsHtml = o.productos.map(p => `
+      <div class="prod-item">
+        <span class="prod-tipo ${tipoClass(p.tipo)}">${p.tipo || 'Otro'}</span>
+        <span class="prod-nombre">${p.nombre}</span>
+        <span class="prod-marca">${p.marca || ''}</span>
+        <span class="prod-cant">×${p.cantidad}</span>
+      </div>`).join('');
+
+    return `
+      <div class="orden-row">
+        <div class="orden-meta">
+          <span class="orden-num">📋 #${o.order_number}</span>
+          <span class="orden-fecha">📥 P. recibido <b>${fmtDate(o.fecha_recibido)}</b></span>
+          <span class="orden-fecha">✅ P. confirmado <b>${fmtDate(o.fecha_confirmado)}</b></span>
+          <span class="orden-cajas">📦 ${o.cajas_orden} caja${o.cajas_orden>1?'s':''}</span>
+          ${o.fabricantes ? `<span class="orden-fab">🏭 ${o.fabricantes}</span>` : ''}
+        </div>
+        ${prodsHtml ? `<div class="productos-list">${prodsHtml}</div>` : ''}
+      </div>`;
+  }).join('');
+
+  const primerOrden = c.ordenes[0] || {};
+  const fabHdr = c.ordenes.map(o => o.fabricantes).filter(Boolean).join(', ');
+  const fabUnicos = [...new Set(fabHdr.split(', ').filter(Boolean))].join(', ');
+  const pedidoHdr = c.total_ordenes === 1
+    ? `<span class="hdr-order">📋 <b>#${primerOrden.order_number}</b></span>
+       <span class="hdr-order">📥 P. recibido <b>${fmtDate(primerOrden.fecha_recibido)}</b></span>
+       <span class="hdr-order">✅ P. confirmado <b>${fmtDate(primerOrden.fecha_confirmado)}</b></span>
+       ${fabUnicos ? `<span class="hdr-fab">${fabUnicos}</span>` : ''}`
+    : `<span class="hdr-order">🛒 <b>${c.total_ordenes} órdenes</b></span>
+       ${fabUnicos ? `<span class="hdr-fab">${fabUnicos}</span>` : ''}`;
+
+  return `
+    <div class="cliente-card" id="card-${c.customer_id}">
+      <div class="cliente-header" onclick="toggleCard('${c.customer_id}')">
+        <span class="cliente-rank">${idx+1}</span>
+        <span class="cliente-email">${c.email}</span>
+        <span class="cliente-pais">${flag(c.country)}</span>
+        ${pedidoHdr}
+        <span class="badge-cajas ${badgeClass(c.total_cajas)}">${c.total_cajas} cajas</span>
+        <span class="toggle-icon">▾</span>
+      </div>
+      <div class="ordenes-wrap">${ordenesHtml}</div>
+    </div>`;
+}
+
+function renderTable(clientes) {
+  const wrap = document.getElementById('tableWrap');
+  if (!clientes.length) {
+    wrap.innerHTML = `<div class="status-box"><p>Sin resultados para los filtros aplicados.</p></div>`;
+    return;
+  }
+  wrap.innerHTML = clientes.map((c, i) => renderCliente(c, i)).join('');
+}
+
+function renderStats(clientes) {
+  const totalCajas   = clientes.reduce((s,c) => s + c.total_cajas, 0);
+  const totalOrdenes = clientes.reduce((s,c) => s + c.total_ordenes, 0);
+  const paises = [...new Set(clientes.map(c => c.country).filter(Boolean))].sort();
+  document.getElementById('statsBar').innerHTML = `
+    <div class="stat-chip">👥 <b>${clientes.length}</b> clientes</div>
+    <div class="stat-chip">📦 <b>${totalCajas}</b> cajas total</div>
+    <div class="stat-chip">🛒 <b>${totalOrdenes}</b> órdenes</div>
+    <div class="stat-chip">🌎 <b>${paises.length}</b> países</div>`;
+}
+
+function populatePaisFilter(clientes) {
+  const sel    = document.getElementById('paisFilter');
+  const actual = sel.value;
+  const paises = [...new Set(clientes.map(c => c.country).filter(Boolean))].sort();
+  sel.innerHTML = `<option value="">🌎 Todos los países</option>` +
+    paises.map(p => `<option value="${p}">${flag(p)}</option>`).join('');
+  sel.value = actual;
+}
+function populateFabFilter(clientes) {
+  const sel    = document.getElementById('fabFilter');
+  const actual = sel.value;
+  const fabs   = [...new Set(
+    clientes.flatMap(c => c.ordenes.flatMap(o => (o.fabricantes||'').split(', '))).filter(Boolean)
+  )].sort();
+  sel.innerHTML = `<option value="">🏭 Todos los fabricantes</option>` +
+    fabs.map(f => `<option value="${f}">${f}</option>`).join('');
+  sel.value = actual;
+}
+
+// ── Filtros ───────────────────────────────────────────────────────────────────
+function applyFilters() {
+  const q   = document.getElementById('searchInput').value.toLowerCase();
+  const pais = document.getElementById('paisFilter').value;
+  const fab  = document.getElementById('fabFilter').value;
+  const filtered = allClientes.filter(c => {
+    if (q    && !c.email.toLowerCase().includes(q)) return false;
+    if (pais && c.country !== pais)                  return false;
+    if (fab  && !c.ordenes.some(o => (o.fabricantes||'').includes(fab))) return false;
+    return true;
+  });
+  renderTable(filtered);
+  renderStats(filtered);
+}
+
+// ── Toggle card / productos ───────────────────────────────────────────────────
+function toggleCard(id) {
+  document.getElementById('card-' + id).classList.toggle('open');
+}
+
+
+// ── Carga ─────────────────────────────────────────────────────────────────────
+async function loadClientes() {
+  const btn  = document.getElementById('btnRefresh');
+  const wrap = document.getElementById('tableWrap');
+  btn.disabled = true; btn.textContent = '⏳ Cargando…';
+  wrap.innerHTML = `<div class="status-box"><div class="spinner"></div><p>Consultando Metabase…</p></div>`;
+  document.getElementById('statsBar').innerHTML = `<div class="stat-chip">⏳ Cargando…</div>`;
+
+  try {
+    const res  = await fetch('/api/clientes');
+    const json = await res.json();
+    if (!res.ok || json.error) throw new Error(json.error || 'Error HTTP ' + res.status);
+
+    allClientes = groupRows(json.rows || []);
+    populatePaisFilter(allClientes);
+    populateFabFilter(allClientes);
+    renderStats(allClientes);
+    renderTable(allClientes);
+
+    const now = new Date();
+    document.getElementById('lastUpdate').textContent =
+      'Actualizado: ' + now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+
+  } catch (err) {
+    wrap.innerHTML = `<div class="status-box"><p>⚠️ No se pudo cargar la información</p><small>${err.message}</small></div>`;
+    document.getElementById('statsBar').innerHTML = `<div class="stat-chip" style="color:var(--red)">⚠️ Error</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = '🔄 Actualizar';
+  }
+}
+
+loadClientes();
+</script>
+</body>
+</html>

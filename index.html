@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Reto de Expertos – Mundial 2026</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="js/partidos-data.js"></script>
+  <script src="js/scoring.js"></script>
+  <style>
+    :root {
+      --navy:  #0d1b4b;
+      --gold:  #f5a800;
+      --gold2: #ffd060;
+      --green: #22c55e;
+      --red:   #ef4444;
+      --gray:  #94a3b8;
+      --bg:    #f0f4f8;
+      --card:  #ffffff;
+      --text:  #1e293b;
+      --border:#e2e8f0;
+    }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); }
+
+    /* NAV */
+    nav {
+      background:var(--navy); padding:0 24px;
+      display:flex; align-items:center; gap:0;
+      position:sticky; top:0; z-index:100;
+      box-shadow:0 2px 8px rgba(0,0,0,.4);
+    }
+    .nav-brand { color:var(--gold); font-weight:700; font-size:1.1rem; padding:16px 24px 16px 0; border-right:1px solid rgba(255,255,255,.15); margin-right:8px; white-space:nowrap; }
+    .nav-brand span { color:#fff; font-weight:400; }
+    nav a { color:rgba(255,255,255,.75); text-decoration:none; padding:16px 18px; font-size:.9rem; transition:all .2s; border-bottom:3px solid transparent; }
+    nav a:hover       { color:#fff; background:rgba(255,255,255,.06); }
+    nav a.active      { color:var(--gold); border-bottom-color:var(--gold); font-weight:600; }
+
+    /* HERO */
+    .hero { background:linear-gradient(135deg, var(--navy) 0%, #1a3a8f 100%); padding:32px 24px 28px; color:#fff; }
+    .hero h1 { font-size:1.6rem; font-weight:700; margin-bottom:6px; }
+    .hero p  { color:rgba(255,255,255,.7); font-size:.95rem; }
+
+    /* STATS BAR */
+    .stats-bar {
+      display:flex; gap:12px; flex-wrap:wrap;
+      padding:14px 24px; background:#fff; border-bottom:1px solid var(--border);
+    }
+    .stat-chip {
+      background:var(--bg); border:1px solid var(--border);
+      border-radius:20px; padding:5px 14px; font-size:.81rem;
+      display:flex; align-items:center; gap:5px;
+    }
+    .stat-chip b { color:var(--navy); }
+
+    /* TANDA TABS */
+    .tabs-wrap {
+      background:#fff; border-bottom:1px solid var(--border);
+      padding:0 24px; overflow-x:auto; display:flex;
+    }
+    .tab-btn {
+      padding:11px 14px; border:none; background:none;
+      cursor:pointer; font-size:.83rem; color:var(--gray);
+      border-bottom:3px solid transparent;
+      white-space:nowrap; transition:all .2s;
+      display:flex; flex-direction:column; align-items:center; gap:2px;
+    }
+    .tab-btn:hover  { color:var(--navy); }
+    .tab-btn.active { color:var(--navy); border-bottom-color:var(--gold); font-weight:700; }
+
+    /* Dot indicator de tipo de fase en cada tab */
+    .tab-dot {
+      display:inline-block; width:7px; height:7px; border-radius:50%;
+      margin-right:4px; vertical-align:middle;
+    }
+    .dot-grupos  { background:#818cf8; }
+    .dot-diecis  { background:var(--gold); }
+    .dot-octavos { background:#f97316; }
+    .dot-cuartos { background:var(--red); }
+    .dot-final   { background:var(--green); }
+
+    .tab-range { font-size:.65rem; opacity:.65; }
+
+    /* TABLE AREA */
+    .table-wrap { padding:20px 24px; overflow-x:auto; }
+
+    /* Section label / tanda header */
+    .tanda-header {
+      display:flex; align-items:flex-start; justify-content:space-between;
+      flex-wrap:wrap; gap:12px;
+      margin-bottom:14px;
+    }
+    .tanda-info {}
+    .tanda-title {
+      font-size:1rem; font-weight:800; color:var(--navy);
+      display:flex; align-items:center; gap:8px; margin-bottom:4px;
+    }
+    .phase-badge {
+      display:inline-block; font-size:.7rem; padding:2px 9px;
+      border-radius:10px; font-weight:700;
+    }
+    .ph-grupos  { background:#e0e7ff; color:#3730a3; }
+    .ph-diecis  { background:#fef3c7; color:#92400e; }
+    .ph-octavos { background:#fee2e2; color:#991b1b; }
+    .ph-cuartos { background:#fde68a; color:#78350f; }
+    .ph-final   { background:#ffd700; color:#000; }
+
+    .tanda-sub { font-size:.78rem; color:var(--gray); }
+
+    /* Winner chip del tanda */
+    .tanda-winner {
+      background:#f0fdf4; border:1px solid #86efac;
+      border-radius:10px; padding:8px 14px;
+      font-size:.8rem; color:#166534;
+      display:flex; align-items:center; gap:6px;
+      white-space:nowrap;
+    }
+    .tanda-winner.pending { background:#f8faff; border-color:#e2e8f0; color:var(--gray); }
+    .tanda-winner b { color:#15803d; }
+
+    /* TABLE */
+    table { width:100%; border-collapse:collapse; min-width:600px; background:var(--card); border-radius:10px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+    thead tr { background:var(--navy); }
+    th { color:rgba(255,255,255,.85); font-size:.73rem; font-weight:600; padding:10px 10px; text-align:center; white-space:nowrap; }
+    th.col-nombre { text-align:left; min-width:150px; }
+    td { padding:8px 10px; font-size:.81rem; text-align:center; border-bottom:1px solid var(--border); }
+    td.col-nombre { text-align:left; font-weight:600; color:var(--navy); }
+    tr:last-child td { border-bottom:none; }
+    tr:hover td { background:#f8faff; }
+
+    /* Score cell */
+    .score-cell {
+      display:inline-flex; align-items:center; justify-content:center;
+      gap:2px; font-weight:700; font-size:.83rem;
+      background:#f1f5f9; border-radius:6px;
+      padding:3px 7px; min-width:40px;
+    }
+    .score-cell.hit   { background:#dcfce7; color:#166534; }
+    .score-cell.miss  { background:#fee2e2; color:#991b1b; }
+    .score-cell.empty { background:#f1f5f9; color:var(--gray); font-size:.68rem; }
+
+    /* Match header in table */
+    th .match-teams { font-size:.68rem; opacity:.85; line-height:1.3; }
+    th .match-id    { font-size:.76rem; font-weight:700; color:var(--gold2); }
+    th .match-score { font-size:.7rem; color:var(--gold2); margin-top:2px; }
+
+    /* loading / error */
+    .loading-box, .error-box { text-align:center; padding:60px 24px; color:var(--gray); }
+    .loading-box .spinner {
+      width:36px; height:36px; border:3px solid var(--border);
+      border-top-color:var(--gold); border-radius:50%;
+      animation:spin .8s linear infinite; margin:0 auto 16px;
+    }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .error-box { color:#dc2626; }
+
+    @media(max-width:600px) {
+      .hero h1 { font-size:1.2rem; }
+      .table-wrap { padding:12px; }
+      th, td { padding:7px 6px; }
+      .tanda-header { flex-direction:column; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-brand">⚽ Reto de <span>Expertos</span></div>
+  <a href="index.html" class="active">📊 Pronósticos</a>
+  <a href="admin.html">📋 Resultados</a>
+  <a href="ranking.html">🏆 Ranking</a>
+  <a href="clientes.html">👥 Clientes</a>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <h1>📋 Registro de Pronósticos</h1>
+  <p>Todos los marcadores pronosticados por participante, organizados por tanda.</p>
+</div>
+
+<!-- STATS BAR -->
+<div class="stats-bar" id="statsBar">
+  <div class="stat-chip">⏳ Cargando datos...</div>
+</div>
+
+<!-- TANDA TABS -->
+<div class="tabs-wrap" id="tandaTabs"></div>
+
+<!-- TABLE -->
+<div class="table-wrap" id="tableWrap">
+  <div class="loading-box">
+    <div class="spinner"></div>
+    <p>Cargando pronósticos desde Google Sheets...</p>
+  </div>
+</div>
+
+<script>
+let allParticipants = [];
+let resultados = {};
+let currentTanda = 0;
+
+// ── Helpers de fase ─────────────────────────────────────────────────────────
+function faseTipoCss(faseNum) {
+  if (faseNum <= 6)  return 'ph-grupos';
+  if (faseNum === 7) return 'ph-diecis';
+  if (faseNum === 8) return 'ph-octavos';
+  if (faseNum === 9) return 'ph-cuartos';
+  return 'ph-final';
+}
+function dotCss(faseNum) {
+  if (faseNum <= 6)  return 'dot-grupos';
+  if (faseNum === 7) return 'dot-diecis';
+  if (faseNum === 8) return 'dot-octavos';
+  if (faseNum === 9) return 'dot-cuartos';
+  return 'dot-final';
+}
+function faseIcono(faseNum) {
+  if (faseNum <= 6)  return '⚽';
+  if (faseNum <= 9)  return '🔥';
+  return '🏆';
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+async function init() {
+  resultados = await fetchResultadosSheets();
+  try {
+    allParticipants = await fetchPronosticos();
+    renderStats();
+    renderTabs();
+    renderTable(currentTanda);
+  } catch(e) {
+    document.getElementById('tableWrap').innerHTML =
+      `<div class="error-box">❌ Error cargando datos: ${e.message || e}<br><small>Verifica la URL del CSV en js/partidos-data.js</small></div>`;
+  }
+}
+
+// ── Stats bar ────────────────────────────────────────────────────────────────
+function renderStats() {
+  const stats = getStats(resultados);
+  document.getElementById('statsBar').innerHTML = `
+    <div class="stat-chip">👥 <b>${allParticipants.length}</b> participantes</div>
+    <div class="stat-chip">⚽ <b>${stats.jugados}</b> / ${stats.total} partidos jugados</div>
+    <div class="stat-chip">📅 <b>${stats.pendientes}</b> partidos pendientes</div>
+    <div class="stat-chip">📦 <b>${TANDAS.length}</b> tandas</div>
+  `;
+}
+
+// ── Tanda tabs ───────────────────────────────────────────────────────────────
+function renderTabs() {
+  const container = document.getElementById('tandaTabs');
+  container.innerHTML = TANDAS.map((t, i) => {
+    const faseNum  = t.partidos[0].fase;
+    const fase     = FASES[faseNum];
+    const dotClass = dotCss(faseNum);
+    const icon     = faseIcono(faseNum);
+    const p0 = t.partidos[0].id;
+    const pN = t.partidos[t.partidos.length - 1].id;
+
+    // ¿Tiene resultados esta tanda?
+    const conResultado = t.partidos.filter(p => resultados[p.id] !== undefined).length;
+    const statusDot = conResultado === t.partidos.length
+      ? '✅' : conResultado > 0 ? '🔵' : '';
+
+    return `<button class="tab-btn ${i===0?'active':''}" onclick="selectTanda(${i})" id="tab-${i}">
+      <span>
+        <span class="tab-dot ${dotClass}"></span>
+        ${icon} Tanda ${t.numero} ${statusDot}
+      </span>
+      <span class="tab-range">P${p0}–P${pN} · ${fase.puntos}pt</span>
+    </button>`;
+  }).join('');
+}
+
+function selectTanda(idx) {
+  currentTanda = idx;
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', i===idx));
+  renderTable(idx);
+}
+
+// ── Tabla principal ──────────────────────────────────────────────────────────
+function renderTable(tandaIdx) {
+  const tanda    = TANDAS[tandaIdx];
+  const partidos = tanda.partidos;
+  const wrap     = document.getElementById('tableWrap');
+  const faseNum  = partidos[0].fase;
+  const fase     = FASES[faseNum];
+
+  if (!allParticipants.length) {
+    wrap.innerHTML = '<div class="loading-box"><p>Sin participantes encontrados.</p></div>';
+    return;
+  }
+
+  // ── Calcular puntos por participante en esta tanda ──
+  const ptsTanda = {};
+  allParticipants.forEach(p => {
+    let pts = 0;
+    partidos.forEach(partido => {
+      const kA = `partido-${partido.id}a`;
+      const kB = `partido-${partido.id}b`;
+      const res = resultados[partido.id];
+      if (res && p.pronosticos[kA] === res.local && p.pronosticos[kB] === res.visitante) {
+        pts += partido.puntos;
+      }
+    });
+    ptsTanda[p.id] = pts;
+  });
+
+  // ── Ganador de esta tanda ──
+  const maxPts = Math.max(...Object.values(ptsTanda));
+  let tandaWinnerHtml;
+  if (maxPts > 0) {
+    const ganadores = allParticipants
+      .filter(p => ptsTanda[p.id] === maxPts)
+      .map(p => p.nombreCompleto || p.correo);
+    const label = ganadores.length > 1
+      ? `🤝 Empate: <b>${ganadores.join(', ')}</b> · ${maxPts} pts`
+      : `🥇 <b>${ganadores[0]}</b> va ganando con <b>${maxPts} pts</b>`;
+    tandaWinnerHtml = `<div class="tanda-winner">${label}</div>`;
+  } else {
+    tandaWinnerHtml = `<div class="tanda-winner pending">⏳ Sin resultados en esta tanda aún</div>`;
+  }
+
+  // ── Cabeceras de partidos ──
+  const conResultado = partidos.filter(p => resultados[p.id] !== undefined).length;
+  const partidoHeaders = partidos.map(p => {
+    const res = resultados[p.id];
+    const scoreHtml = res
+      ? `<div class="match-score">${res.local}–${res.visitante}</div>`
+      : '';
+    return `<th>
+      <div class="match-id">P${p.id}</div>
+      <div class="match-teams">${shortName(p.local)}<br>vs<br>${shortName(p.visitante)}</div>
+      ${scoreHtml}
+    </th>`;
+  }).join('');
+
+  // ── Filas de participantes ──
+  const rows = allParticipants.map(p => {
+    const cells = partidos.map(partido => {
+      const kA = `partido-${partido.id}a`;
+      const kB = `partido-${partido.id}b`;
+      const pA = p.pronosticos[kA] ?? null;
+      const pB = p.pronosticos[kB] ?? null;
+      const res = resultados[partido.id];
+
+      if (pA === null || pB === null) {
+        return `<td><span class="score-cell empty">–</span></td>`;
+      }
+
+      let cls = '';
+      if (res) {
+        cls = (pA === res.local && pB === res.visitante) ? 'hit' : 'miss';
+      }
+      return `<td><span class="score-cell ${cls}">${pA}–${pB}</span></td>`;
+    }).join('');
+
+    const pts = ptsTanda[p.id];
+    const ptsLabel = pts > 0
+      ? `<span style="color:var(--green);font-weight:700">${pts} pts</span>`
+      : `<span style="color:var(--gray)">–</span>`;
+
+    return `<tr>
+      <td class="col-nombre">${p.nombreCompleto || p.correo}</td>
+      <td>${ptsLabel}</td>
+      ${cells}
+    </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <div class="tanda-header">
+      <div class="tanda-info">
+        <div class="tanda-title">
+          ${faseIcono(faseNum)} ${fase.nombre}
+          <span class="phase-badge ${faseTipoCss(faseNum)}">${fase.puntos} pto${fase.puntos>1?'s':''} por acierto</span>
+        </div>
+        <div class="tanda-sub">
+          Partidos ${partidos[0].id} – ${partidos[partidos.length-1].id}
+          &nbsp;·&nbsp; ${conResultado}/${partidos.length} resultados ingresados
+        </div>
+      </div>
+      ${tandaWinnerHtml}
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th class="col-nombre">Participante</th>
+          <th>Pts tanda</th>
+          ${partidoHeaders}
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <p style="margin-top:10px;font-size:.73rem;color:var(--gray)">
+      🟢 Marcador exacto &nbsp;·&nbsp; 🔴 Falló &nbsp;·&nbsp; – Sin pronóstico
+    </p>
+  `;
+}
+
+// ── Acortar nombres de selecciones ───────────────────────────────────────────
+function shortName(name) {
+  const map = {
+    'Bosnia y Herzegovina':'Bosnia', 'República de Corea':'Corea',
+    'Islas de Cabo Verde':'Cabo Verde', 'Costa de Marfil':'C. Marfil',
+    'Países Bajos':'P. Bajos', 'Nueva Zelanda':'N. Zelanda',
+    'Arabia Saudí':'A. Saudí', 'RI de Irán':'Irán', 'RD Congo':'R.D.Congo',
+  };
+  return map[name] || name;
+}
+
+init();
+</script>
+</body>
+</html>

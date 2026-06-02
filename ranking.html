@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Ranking – Desafío Expertos 2026</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="js/partidos-data.js"></script>
+  <script src="js/scoring.js"></script>
+  <style>
+    :root {
+      --navy:#0d1b4b; --gold:#f5a800; --gold2:#ffd060;
+      --green:#22c55e; --red:#ef4444; --gray:#94a3b8;
+      --bg:#f0f4f8; --card:#ffffff; --text:#1e293b; --border:#e2e8f0;
+    }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--text); }
+
+    nav {
+      background:var(--navy); padding:0 24px;
+      display:flex; align-items:center; gap:0;
+      position:sticky; top:0; z-index:100;
+      box-shadow:0 2px 8px rgba(0,0,0,.4);
+    }
+    .nav-brand { color:var(--gold); font-weight:700; font-size:1.1rem; padding:16px 24px 16px 0; border-right:1px solid rgba(255,255,255,.15); margin-right:8px; white-space:nowrap; }
+    .nav-brand span { color:#fff; font-weight:400; }
+    nav a { color:rgba(255,255,255,.75); text-decoration:none; padding:16px 18px; font-size:.9rem; transition:all .2s; border-bottom:3px solid transparent; }
+    nav a:hover  { color:#fff; background:rgba(255,255,255,.06); }
+    nav a.active { color:var(--gold); border-bottom-color:var(--gold); font-weight:600; }
+
+    .hero { background:linear-gradient(135deg,var(--navy) 0%,#1a3a8f 100%); padding:28px 24px; color:#fff; }
+    .hero h1 { font-size:1.5rem; font-weight:700; margin-bottom:6px; }
+    .hero p  { color:rgba(255,255,255,.7); font-size:.9rem; }
+
+    /* Stats */
+    .stats-grid {
+      display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+      gap:12px; padding:20px 24px;
+      background:#fff; border-bottom:1px solid var(--border);
+    }
+    .stat-card { text-align:center; padding:14px; background:var(--bg); border-radius:10px; border:1px solid var(--border); }
+    .stat-card .val { font-size:1.5rem; font-weight:800; color:var(--navy); }
+    .stat-card .lbl { font-size:.73rem; color:var(--gray); margin-top:4px; }
+
+    /* Toolbar */
+    .toolbar {
+      background:#fff; border-bottom:1px solid var(--border);
+      padding:10px 24px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    }
+    .btn { padding:7px 16px; border-radius:8px; border:none; cursor:pointer; font-size:.82rem; font-weight:600; transition:all .2s; }
+    .btn-primary { background:var(--gold); color:#000; }
+    .btn-primary:hover { background:var(--gold2); }
+    .btn-outline { background:var(--bg); border:1px solid var(--border); color:var(--text); }
+    .btn-outline:hover { background:#e2e8f0; }
+    .btn-outline.active { background:var(--navy); color:#fff; border-color:var(--navy); }
+
+    /* ── GANADORES POR FASE ─────────────────────────────────────── */
+    .winners-section {
+      padding:24px;
+      background:#fff;
+      border-bottom:1px solid var(--border);
+    }
+    .winners-title {
+      font-size:1.05rem; font-weight:800; color:var(--navy);
+      margin-bottom:16px; display:flex; align-items:center; gap:8px;
+    }
+    .winners-grid {
+      display:grid;
+      grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));
+      gap:12px;
+    }
+    .winner-card {
+      border-radius:12px; padding:14px 16px;
+      border:1px solid var(--border);
+      background:var(--bg);
+      position:relative; overflow:hidden;
+    }
+    .winner-card.is-grupos  { border-left:4px solid #818cf8; }
+    .winner-card.is-diecis  { border-left:4px solid var(--gold); }
+    .winner-card.is-octavos { border-left:4px solid #f97316; }
+    .winner-card.is-cuartos { border-left:4px solid var(--red); }
+    .winner-card.is-final   { border-left:4px solid var(--green); background:linear-gradient(135deg,#f0fdf4,#dcfce7); }
+    .winner-card.is-overall { border:2px solid var(--gold); background:linear-gradient(135deg,#fffbeb,#fef3c7); }
+    .winner-card.pending    { opacity:.6; }
+
+    .winner-phase-label {
+      font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
+      margin-bottom:6px; display:flex; align-items:center; gap:6px;
+    }
+    .winner-phase-label .pts-pill {
+      background:rgba(0,0,0,.08); border-radius:8px; padding:1px 7px; font-size:.65rem;
+    }
+    .winner-name {
+      font-size:.95rem; font-weight:800; color:var(--navy);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    .winner-pts  {
+      font-size:.8rem; color:var(--gray); margin-top:3px;
+    }
+    .winner-pts b { color:var(--navy); }
+    .winner-tie-names {
+      font-size:.82rem; color:var(--navy); font-weight:700;
+      line-height:1.5;
+    }
+    .winner-medal { font-size:1.4rem; float:right; margin-top:-2px; }
+    .pending-label { font-size:.85rem; color:var(--gray); font-style:italic; }
+
+    /* ── PODIUM ───────────────────────────────────────────────────── */
+    .podium {
+      display:flex; justify-content:center; align-items:flex-end;
+      gap:12px; padding:24px 24px 8px;
+    }
+    .podium-place {
+      text-align:center; background:var(--card);
+      border-radius:12px; padding:16px 20px;
+      border:2px solid var(--border); min-width:130px;
+    }
+    .podium-place.p1 { border-color:var(--gold); transform:scale(1.08); box-shadow:0 8px 30px rgba(245,168,0,.25); }
+    .podium-place.p2 { border-color:#94a3b8; }
+    .podium-place.p3 { border-color:#cd7f32; }
+    .podium-medal { font-size:2rem; margin-bottom:4px; }
+    .podium-name  { font-weight:700; font-size:.9rem; margin-bottom:4px; }
+    .podium-pts   { font-size:1.2rem; font-weight:800; color:var(--navy); }
+    .podium-sub   { font-size:.72rem; color:var(--gray); }
+
+    /* ── TABLE ────────────────────────────────────────────────────── */
+    .table-wrap { padding:16px 24px 40px; overflow-x:auto; }
+    table { width:100%; border-collapse:collapse; background:var(--card); border-radius:10px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+    thead tr { background:var(--navy); }
+    th { color:rgba(255,255,255,.85); font-size:.73rem; font-weight:600; padding:10px 10px; text-align:center; white-space:nowrap; }
+    th.left { text-align:left; }
+    td { padding:10px 10px; font-size:.83rem; text-align:center; border-bottom:1px solid var(--border); }
+    td.left { text-align:left; }
+    tr:last-child td { border-bottom:none; }
+    tr:hover td { background:#f8faff; }
+
+    .pos-badge {
+      display:inline-flex; align-items:center; justify-content:center;
+      width:30px; height:30px; border-radius:50%; font-weight:800; font-size:.82rem;
+    }
+    .pos-1 { background:var(--gold); color:#000; }
+    .pos-2 { background:#e2e8f0; color:#475569; }
+    .pos-3 { background:#fed7aa; color:#9a3412; }
+    .pos-n { background:#f1f5f9; color:#64748b; }
+
+    .pts-big { font-size:1.05rem; font-weight:800; color:var(--navy); }
+    .aciertos-badge { display:inline-block; background:#dcfce7; color:#166534; border-radius:10px; padding:2px 9px; font-size:.73rem; font-weight:700; }
+
+    /* Phase cells */
+    .phase-cell {
+      font-size:.75rem; font-weight:700;
+      padding:3px 8px; border-radius:6px;
+      display:inline-block; min-width:24px;
+    }
+    .pc-0 { background:#f1f5f9; color:#94a3b8; }
+    .pc-g { background:#e0e7ff; color:#3730a3; }   /* grupos 1pt */
+    .pc-7 { background:#fef3c7; color:#92400e; }   /* diecis 2pt */
+    .pc-8 { background:#fee2e2; color:#991b1b; }   /* octavos 3pt */
+    .pc-9 { background:#fde68a; color:#78350f; }   /* cuartos 4pt */
+    .pc-f { background:#ffd700; color:#000; }      /* final 5pt */
+
+    /* Expandable detail */
+    .detail-row { display:none; }
+    .detail-row.open { display:table-row; }
+    .detail-inner { padding:12px 16px; background:#f8faff; }
+    .detail-table { width:100%; border-collapse:collapse; font-size:.77rem; }
+    .detail-table th { background:#e2e8f0; padding:6px 10px; text-align:center; }
+    .detail-table td { padding:5px 10px; border-bottom:1px solid #e2e8f0; text-align:center; }
+    .hit-row td  { background:#f0fdf4; }
+
+    .expand-btn { cursor:pointer; background:none; border:none; font-size:.78rem; color:var(--gray); padding:4px; }
+    .expand-btn:hover { color:var(--navy); }
+
+    /* Loading */
+    .loading-box { text-align:center; padding:60px 24px; color:var(--gray); }
+    .spinner { width:36px; height:36px; border:3px solid var(--border); border-top-color:var(--gold); border-radius:50%; animation:spin .8s linear infinite; margin:0 auto 16px; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+
+    .no-results-msg { background:#fef3c7; border:1px solid #fde68a; border-radius:10px; padding:14px 18px; margin:16px 24px; font-size:.87rem; color:#92400e; }
+
+    @media(max-width:640px) {
+      .winners-grid { grid-template-columns:1fr 1fr; }
+      .podium { gap:8px; }
+      .podium-place { min-width:100px; padding:12px 10px; }
+    }
+    @media(max-width:400px) {
+      .winners-grid { grid-template-columns:1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-brand">⚽ Reto de <span>Expertos</span></div>
+  <a href="index.html">📊 Pronósticos</a>
+  <a href="admin.html">📋 Resultados</a>
+  <a href="ranking.html" class="active">🏆 Ranking</a>
+  <a href="clientes.html">👥 Clientes</a>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <h1>🏆 Tabla de Posiciones</h1>
+  <p>Ranking en tiempo real · Ganadores por tanda y total del reto.</p>
+</div>
+
+<!-- STATS -->
+<div class="stats-grid" id="statsGrid">
+  <div class="stat-card"><div class="val">–</div><div class="lbl">Participantes</div></div>
+</div>
+
+<!-- TOOLBAR -->
+<div class="toolbar">
+  <button class="btn btn-primary" onclick="reload()">🔄 Actualizar</button>
+  <span style="font-size:.82rem;color:var(--gray)">Mostrar:</span>
+  <button class="btn btn-outline active" id="btn-all"    onclick="setView('all')">Todos</button>
+  <button class="btn btn-outline"        id="btn-active" onclick="setView('active')">Solo con puntos</button>
+</div>
+
+<!-- GANADORES POR FASE -->
+<div class="winners-section" id="winnersSection" style="display:none"></div>
+
+<!-- PODIUM & TABLE -->
+<div id="mainContent">
+  <div class="loading-box">
+    <div class="spinner"></div>
+    <p>Calculando ranking...</p>
+  </div>
+</div>
+
+<script>
+let ranking = [];
+let resultados = {};
+let currentView = 'all';
+
+// ── Fase helpers ────────────────────────────────────────────────────────────
+function faseCssClass(faseNum) {
+  if (faseNum <= 6)  return 'pc-g';
+  if (faseNum === 7) return 'pc-7';
+  if (faseNum === 8) return 'pc-8';
+  if (faseNum === 9) return 'pc-9';
+  return 'pc-f';
+}
+function winnerCardClass(faseNum) {
+  if (faseNum <= 6)  return 'is-grupos';
+  if (faseNum === 7) return 'is-diecis';
+  if (faseNum === 8) return 'is-octavos';
+  if (faseNum === 9) return 'is-cuartos';
+  return 'is-final';
+}
+function faseShortLabel(faseNum) {
+  if (faseNum <= 6)  return 'T' + faseNum;
+  if (faseNum === 7) return 'D16';
+  if (faseNum === 8) return 'Oct';
+  if (faseNum === 9) return 'Qtr';
+  return 'Final';
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+async function init() {
+  resultados = await fetchResultadosSheets();
+  const stats = getStats(resultados);
+
+  try {
+    const participants = await fetchPronosticos();
+    ranking = calcularRanking(participants, resultados);
+    renderStats(ranking, stats);
+    renderWinners(ranking, stats);
+    renderMain(ranking, resultados, stats);
+  } catch(e) {
+    document.getElementById('mainContent').innerHTML =
+      `<div class="loading-box" style="color:#dc2626">❌ Error: ${e.message || e}</div>`;
+  }
+}
+
+function reload() {
+  document.getElementById('mainContent').innerHTML =
+    '<div class="loading-box"><div class="spinner"></div><p>Actualizando...</p></div>';
+  document.getElementById('winnersSection').style.display = 'none';
+  init();
+}
+
+async function setView(v) {
+  currentView = v;
+  document.getElementById('btn-all').classList.toggle('active', v === 'all');
+  document.getElementById('btn-active').classList.toggle('active', v === 'active');
+  const stats = getStats(resultados);
+  renderMain(ranking, resultados, stats);
+}
+
+// ── Stats ────────────────────────────────────────────────────────────────────
+function renderStats(ranking, stats) {
+  const maxPts = ranking.length ? ranking[0].puntosTotales : 0;
+  const avgPts = ranking.length
+    ? (ranking.reduce((s,r) => s + r.puntosTotales, 0) / ranking.length).toFixed(1) : 0;
+  const conPts = ranking.filter(r => r.puntosTotales > 0).length;
+
+  document.getElementById('statsGrid').innerHTML = `
+    <div class="stat-card"><div class="val">${ranking.length}</div><div class="lbl">Participantes</div></div>
+    <div class="stat-card"><div class="val">${stats.jugados}</div><div class="lbl">Partidos jugados</div></div>
+    <div class="stat-card"><div class="val">${maxPts}</div><div class="lbl">Máximo de puntos</div></div>
+    <div class="stat-card"><div class="val">${avgPts}</div><div class="lbl">Promedio</div></div>
+    <div class="stat-card"><div class="val">${conPts}</div><div class="lbl">Con ≥1 punto</div></div>
+    <div class="stat-card"><div class="val">${stats.pendientes}</div><div class="lbl">Partidos pendientes</div></div>
+  `;
+}
+
+// ── Ganadores por fase ────────────────────────────────────────────────────────
+function renderWinners(ranking, stats) {
+  if (!ranking.length) return;
+
+  const section = document.getElementById('winnersSection');
+
+  // Ganador global
+  const overallWinner = ranking[0];
+  const overallTied   = ranking.filter(r => r.posicion === 1);
+
+  // Ganador por fase
+  const faseNums = Object.keys(FASES).map(Number);
+
+  // Para cada fase, encontrar quién tiene más puntos en porFase[f]
+  function winnersOfFase(f) {
+    let maxPts = 0;
+    ranking.forEach(r => {
+      const fd = r.porFase[f];
+      if (fd && fd.puntos > maxPts) maxPts = fd.puntos;
+    });
+    if (maxPts === 0) return null; // fase sin resultados aún
+    return { pts: maxPts, ganadores: ranking.filter(r => r.porFase[f] && r.porFase[f].puntos === maxPts) };
+  }
+
+  // Cuántas fases tienen resultados
+  const fasesConResultados = faseNums.filter(f => {
+    const pts = FASES[f].puntos;
+    const partidosDeFase = PARTIDOS.filter(p => p.fase === f);
+    return partidosDeFase.some(p => resultados[p.id] !== undefined);
+  });
+
+  let html = `<div class="winners-title">🥇 Ganadores por Tanda / Fase</div>
+  <div class="winners-grid">`;
+
+  // Tarjeta global PRIMERO
+  const overallNames = overallTied.map(r => r.nombreCompleto || r.correo);
+  if (overallWinner.puntosTotales > 0) {
+    html += `
+      <div class="winner-card is-overall">
+        <div class="winner-phase-label" style="color:#92400e">
+          🏆 Líder General
+          <span class="pts-pill">${overallWinner.puntosTotales} pts totales</span>
+        </div>
+        <span class="winner-medal">🥇</span>
+        ${overallTied.length === 1
+          ? `<div class="winner-name">${overallNames[0]}</div>
+             <div class="winner-pts">${overallWinner.puntosTotales} pts · ${overallWinner.aciertos} aciertos</div>`
+          : `<div class="winner-tie-names">${overallNames.join('<br>')}</div>
+             <div class="winner-pts">Empate — ${overallWinner.puntosTotales} pts cada uno</div>`
+        }
+      </div>`;
+  } else {
+    html += `
+      <div class="winner-card is-overall pending">
+        <div class="winner-phase-label" style="color:#92400e">🏆 Líder General</div>
+        <div class="pending-label">Sin resultados aún</div>
+      </div>`;
+  }
+
+  // Una tarjeta por fase
+  faseNums.forEach(f => {
+    const fase = FASES[f];
+    const result = winnersOfFase(f);
+    const cardCls = winnerCardClass(f);
+
+    html += `<div class="winner-card ${cardCls} ${result ? '' : 'pending'}">
+      <div class="winner-phase-label">
+        ${faseLabel(f, fase)}
+        <span class="pts-pill">${fase.puntos} pt/acierto</span>
+      </div>`;
+
+    if (result) {
+      const names = result.ganadores.map(r => r.nombreCompleto || r.correo);
+      html += `
+        <span class="winner-medal">${result.ganadores.length > 1 ? '🤝' : '🥇'}</span>
+        ${result.ganadores.length === 1
+          ? `<div class="winner-name">${names[0]}</div>
+             <div class="winner-pts"><b>${result.pts}</b> pts en esta fase</div>`
+          : `<div class="winner-tie-names">${names.join('<br>')}</div>
+             <div class="winner-pts">Empate — <b>${result.pts}</b> pts cada uno</div>`
+        }`;
+    } else {
+      html += `<div class="pending-label">Pendiente</div>`;
+    }
+
+    html += `</div>`;
+  });
+
+  html += `</div>`;
+  section.innerHTML = html;
+  section.style.display = 'block';
+}
+
+function faseLabel(f, fase) {
+  const icons = {1:'⚽',2:'⚽',3:'⚽',4:'⚽',5:'⚽',6:'⚽',7:'🔥',8:'🔥',9:'🔥',10:'🏆'};
+  return (icons[f] || '⚽') + ' ' + fase.nombre + ' <small style="opacity:.7">(P' + fase.partidos + ')</small>';
+}
+
+// ── Render main ──────────────────────────────────────────────────────────────
+function renderMain(ranking, resultados, stats) {
+  const list = currentView === 'active'
+    ? ranking.filter(r => r.puntosTotales > 0)
+    : ranking;
+
+  const noResultsMsg = stats.jugados === 0
+    ? `<div class="no-results-msg">⚠️ Aún no hay resultados. Ve a <a href="admin.html">Resultados</a> para ver el estado.</div>`
+    : '';
+
+  let html = noResultsMsg;
+
+  // Podium top 3
+  if (list.length >= 1) {
+    const top = list.slice(0, Math.min(3, list.length));
+    const order = top.length === 1 ? [top[0]]
+      : top.length === 2 ? [top[1], top[0]]
+      : [top[1], top[0], top[2]];
+    const medals  = ['🥈','🥇','🥉'];
+    const classes = ['p2','p1','p3'];
+    html += `<div class="podium">`;
+    order.forEach((r, i) => {
+      html += `
+        <div class="podium-place ${classes[i]}">
+          <div class="podium-medal">${medals[i]}</div>
+          <div class="podium-name">${r.nombreCompleto || r.correo}</div>
+          <div class="podium-pts">${r.puntosTotales}<span style="font-size:.65rem;font-weight:400"> pts</span></div>
+          <div class="podium-sub">${r.aciertos} aciertos</div>
+        </div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Phase headers
+  const faseNums = Object.keys(FASES).map(Number);
+  const phaseHeaders = faseNums.map(f =>
+    `<th title="${FASES[f].nombre} · ${FASES[f].puntos}pt/acierto">
+       ${faseShortLabel(f)}<br>
+       <span style="font-size:.6rem;opacity:.65">${FASES[f].puntos}pt</span>
+     </th>`
+  ).join('');
+
+  // Rows
+  const rows = list.map(r => {
+    const posClass = r.posicion === 1 ? 'pos-1' : r.posicion === 2 ? 'pos-2' : r.posicion === 3 ? 'pos-3' : 'pos-n';
+
+    const phaseCells = faseNums.map(f => {
+      const fd = r.porFase[f];
+      const pts = fd ? fd.puntos : 0;
+      const cls = pts === 0 ? 'pc-0' : faseCssClass(f);
+      const tip = fd ? `${fd.aciertos} aciertos · ${fd.puntos} pts` : 'Sin resultados';
+      return `<td><span class="phase-cell ${cls}" title="${tip}">${pts}</span></td>`;
+    }).join('');
+
+    return `
+      <tr>
+        <td><span class="pos-badge ${posClass}">${r.posicion}</span></td>
+        <td class="left">
+          <div style="font-weight:700">${r.nombreCompleto || r.correo}</div>
+          <div style="font-size:.7rem;color:var(--gray)">${r.correo || ''}</div>
+        </td>
+        <td><span class="pts-big">${r.puntosTotales}</span></td>
+        <td><span class="aciertos-badge">✅ ${r.aciertos}</span></td>
+        <td style="color:var(--gray);font-size:.8rem">${r.pronosticados}</td>
+        ${phaseCells}
+        <td>
+          <button class="expand-btn" onclick="toggleDetail(this,'detail-${r.id}')">📋 ver</button>
+        </td>
+      </tr>
+      <tr class="detail-row" id="detail-${r.id}">
+        <td colspan="${6 + faseNums.length}">
+          <div class="detail-inner">${renderDetailTable(r, resultados)}</div>
+        </td>
+      </tr>`;
+  }).join('');
+
+  html += `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th class="left">Participante</th>
+            <th>Puntos</th>
+            <th>Aciertos</th>
+            <th title="Pronósticos ingresados">Pron.</th>
+            ${phaseHeaders}
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>${rows || '<tr><td colspan="20" style="text-align:center;padding:30px;color:var(--gray)">Sin participantes</td></tr>'}</tbody>
+      </table>
+      <p style="margin-top:10px;font-size:.73rem;color:var(--gray)">
+        Columnas: T1–T6 = Grupos · D16 = Dieciseisavos · Oct = Octavos · Qtr = Cuartos · Final
+      </p>
+    </div>`;
+
+  document.getElementById('mainContent').innerHTML = html;
+}
+
+// ── Detail table ──────────────────────────────────────────────────────────────
+function renderDetailTable(r, resultados) {
+  const jugados = r.detalle.filter(d => d.jugado && d.pronosticado);
+  if (!jugados.length) return '<p style="color:var(--gray);font-size:.82rem;padding:8px">Sin partidos con resultado y pronóstico disponibles.</p>';
+
+  const rows = jugados.map(d => {
+    const hit = d.puntos > 0;
+    return `<tr class="${hit ? 'hit-row' : ''}">
+      <td>P${d.partidoId}</td>
+      <td>${d.local}</td>
+      <td style="font-weight:700">${d.pronLocal}–${d.pronVisitante}</td>
+      <td>vs</td>
+      <td style="font-weight:700;color:${hit?'var(--green)':'var(--red)'}">${d.realLocal}–${d.realVisitante}</td>
+      <td>${d.visitante}</td>
+      <td>${hit ? `<b style="color:var(--green)">+${d.puntos}</b>` : '<span style="color:var(--gray)">0</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  return `<table class="detail-table">
+    <thead><tr><th>P#</th><th>Local</th><th>Tu pronóstico</th><th></th><th>Real</th><th>Visitante</th><th>Pts</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function toggleDetail(btn, rowId) {
+  const row = document.getElementById(rowId);
+  if (!row) return;
+  const open = row.classList.toggle('open');
+  btn.textContent = open ? '📋 ocultar' : '📋 ver';
+}
+
+init();
+</script>
+</body>
+</html>
