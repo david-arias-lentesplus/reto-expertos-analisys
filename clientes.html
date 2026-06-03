@@ -47,6 +47,9 @@
     .btn-refresh { background:var(--navy); color:#fff; border:none; border-radius:8px; padding:7px 16px; font-size:.88rem; cursor:pointer; display:flex; align-items:center; gap:6px; }
     .btn-refresh:hover { background:#1a3a8f; }
     .btn-refresh:disabled { opacity:.5; cursor:default; }
+    .btn-csv { background:#16a34a; color:#fff; border:none; border-radius:8px; padding:7px 16px; font-size:.88rem; cursor:pointer; display:flex; align-items:center; gap:6px; }
+    .btn-csv:hover { background:#15803d; }
+    .btn-csv:disabled { opacity:.5; cursor:default; }
     .last-update { font-size:.78rem; color:var(--gray); margin-left:auto; }
 
     /* TABLA CLIENTES */
@@ -148,6 +151,7 @@
   <select class="filter-sel" id="fabFilter" onchange="applyFilters()">
     <option value="">🏭 Todos los fabricantes</option>
   </select>
+  <button class="btn-csv"     id="btnCsv"     onclick="downloadCSV()">⬇️ Descargar CSV</button>
   <button class="btn-refresh" id="btnRefresh" onclick="loadClientes()">🔄 Actualizar</button>
   <span   class="last-update" id="lastUpdate"></span>
 </div>
@@ -315,6 +319,66 @@ function toggleCard(id) {
   document.getElementById('card-' + id).classList.toggle('open');
 }
 
+
+// ── Descarga CSV ──────────────────────────────────────────────────────────────
+function getFilteredClientes() {
+  const q    = document.getElementById('searchInput').value.toLowerCase();
+  const pais = document.getElementById('paisFilter').value;
+  const fab  = document.getElementById('fabFilter').value;
+  return allClientes.filter(c => {
+    if (q    && !c.email.toLowerCase().includes(q)) return false;
+    if (pais && c.country !== pais)                  return false;
+    if (fab  && !c.ordenes.some(o => (o.fabricantes||'').includes(fab))) return false;
+    return true;
+  });
+}
+
+function escCsv(v) {
+  if (v == null) return '';
+  const s = String(v);
+  return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g,'""')}"` : s;
+}
+
+function downloadCSV() {
+  const clientes = getFilteredClientes();
+  if (!clientes.length) { alert('No hay clientes para exportar con los filtros actuales.'); return; }
+
+  const headers = [
+    'Rank','Customer ID','Email','País',
+    'Total Cajas','Total Órdenes',
+    'Núm. Orden','Fecha Recibido','Fecha Confirmado','Cajas Orden','Fabricantes',
+    'Productos'
+  ];
+
+  const rows = [];
+  clientes.forEach((c, idx) => {
+    if (!c.ordenes.length) {
+      rows.push([idx+1, c.customer_id, c.email, c.country, c.total_cajas, c.total_ordenes, '','','','','','']);
+    } else {
+      c.ordenes.forEach(o => {
+        const prodsStr = o.productos.length
+          ? o.productos.map(p => `${p.nombre}${p.marca ? ' ('+p.marca+')' : ''} ×${p.cantidad}`).join(' | ')
+          : '';
+        rows.push([idx+1, c.customer_id, c.email, c.country, c.total_cajas, c.total_ordenes,
+          o.order_number, o.fecha_recibido||'', o.fecha_confirmado||'', o.cajas_orden, o.fabricantes||'',
+          prodsStr]);
+      });
+    }
+  });
+
+  const csv = [headers, ...rows].map(r => r.map(escCsv).join(',')).join('\r\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  const now  = new Date();
+  const ts   = now.toISOString().slice(0,10);
+  a.href     = url;
+  a.download = `clientes_lentesplus_${ts}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 // ── Carga ─────────────────────────────────────────────────────────────────────
 async function loadClientes() {
