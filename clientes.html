@@ -35,9 +35,14 @@
     .hero h1 { font-size:1.5rem; font-weight:700; margin-bottom:4px; }
     .hero p  { color:rgba(255,255,255,.7); font-size:.9rem; }
 
-    .stats-bar { display:flex; gap:10px; flex-wrap:wrap; padding:12px 24px; background:#fff; border-bottom:1px solid var(--border); }
+    /* Stats bar con dos filas: totales globales y filtrados */
+    .stats-bar { display:flex; gap:10px; flex-wrap:wrap; padding:12px 24px; background:#fff; border-bottom:1px solid var(--border); align-items:center; }
     .stat-chip { background:var(--bg); border:1px solid var(--border); border-radius:20px; padding:5px 14px; font-size:.81rem; display:flex; align-items:center; gap:5px; }
     .stat-chip b { color:var(--navy); }
+    .stat-chip.highlight { background:#eff6ff; border-color:#bfdbfe; }
+    .stat-chip.highlight b { color:#1d4ed8; }
+    .stats-divider { width:1px; height:22px; background:var(--border); margin:0 4px; }
+    .filter-label { font-size:.75rem; color:var(--gray); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
 
     .toolbar { padding:12px 24px; background:#fff; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
     .search-box { flex:1; min-width:180px; max-width:320px; border:1px solid var(--border); border-radius:8px; padding:7px 12px; font-size:.88rem; outline:none; }
@@ -47,13 +52,13 @@
     .btn-refresh { background:var(--navy); color:#fff; border:none; border-radius:8px; padding:7px 16px; font-size:.88rem; cursor:pointer; display:flex; align-items:center; gap:6px; }
     .btn-refresh:hover { background:#1a3a8f; }
     .btn-refresh:disabled { opacity:.5; cursor:default; }
-    .btn-csv { background:#16a34a; color:#fff; border:none; border-radius:8px; padding:7px 16px; font-size:.88rem; cursor:pointer; display:flex; align-items:center; gap:6px; }
+    .btn-csv { background:#16a34a; color:#fff; border:none; border-radius:8px; padding:7px 16px; font-size:.88rem; cursor:pointer; display:flex; align-items:center; gap:6px; white-space:nowrap; }
     .btn-csv:hover { background:#15803d; }
     .btn-csv:disabled { opacity:.5; cursor:default; }
     .last-update { font-size:.78rem; color:var(--gray); margin-left:auto; }
 
     /* TABLA CLIENTES */
-    .table-wrap { padding:20px 24px; }
+    .table-wrap { padding:20px 24px 8px; }
 
     .cliente-card {
       background:var(--card); border-radius:10px; margin-bottom:12px;
@@ -95,7 +100,6 @@
     .orden-fecha { font-size:.8rem; color:var(--gray); }
     .orden-cajas { font-size:.8rem; background:#f0fdf4; color:#166534; border-radius:12px; padding:2px 8px; font-weight:600; }
 
-
     .productos-list { display:block; margin-top:8px; }
     .prod-item {
       display:flex; align-items:center; gap:10px;
@@ -112,13 +116,28 @@
     .prod-marca  { color:var(--gray); font-size:.78rem; }
     .prod-cant   { font-weight:700; color:var(--navy); min-width:24px; text-align:right; }
 
+    /* PAGINADOR */
+    .pager {
+      display:flex; align-items:center; justify-content:center; gap:8px;
+      padding:16px 24px 24px;
+    }
+    .pager-btn {
+      background:#fff; border:1px solid var(--border); border-radius:8px;
+      padding:6px 14px; font-size:.85rem; cursor:pointer; transition:all .15s; color:var(--text);
+    }
+    .pager-btn:hover:not(:disabled) { background:var(--navy); color:#fff; border-color:var(--navy); }
+    .pager-btn:disabled { opacity:.4; cursor:default; }
+    .pager-btn.active { background:var(--navy); color:#fff; border-color:var(--navy); font-weight:700; }
+    .pager-info { font-size:.82rem; color:var(--gray); padding:0 8px; }
+    .pager-ellipsis { color:var(--gray); padding:0 4px; }
+
     /* EMPTY / LOADING / ERROR */
     .status-box { text-align:center; padding:64px 24px; color:var(--gray); }
     .spinner { width:36px; height:36px; border:3px solid var(--border); border-top-color:var(--navy); border-radius:50%; animation:spin .7s linear infinite; margin:0 auto 14px; }
     @keyframes spin { to { transform:rotate(360deg); } }
 
     @media(max-width:600px) {
-      .table-wrap { padding:12px; }
+      .table-wrap { padding:12px 12px 4px; }
       .cliente-header { grid-template-columns:28px 1fr auto auto auto; }
       .cliente-pais, .col-ordenes { display:none; }
     }
@@ -159,25 +178,30 @@
 <div class="table-wrap" id="tableWrap">
   <div class="status-box"><div class="spinner"></div><p>Consultando Metabase…</p></div>
 </div>
+<div id="pagerWrap"></div>
 
 <script>
-// ── banderas emoji por código de país ────────────────────────────────────────
+// ── Constantes ────────────────────────────────────────────────────────────────
 const FLAGS = {MX:'🇲🇽',CO:'🇨🇴',AR:'🇦🇷',CL:'🇨🇱',PE:'🇵🇪',EC:'🇪🇨',VE:'🇻🇪',BO:'🇧🇴',UY:'🇺🇾',PY:'🇵🇾',CR:'🇨🇷',PA:'🇵🇦',GT:'🇬🇹',HN:'🇭🇳',SV:'🇸🇻',NI:'🇳🇮',DO:'🇩🇴',CU:'🇨🇺',PR:'🇵🇷',US:'🇺🇸'};
 const flag = c => (FLAGS[c] || '🌐') + ' ' + (c || '—');
-
-let allClientes = [];
 const fmtDate = d => d ? new Date(d + 'T12:00:00Z').toLocaleDateString('es-MX',{day:'2-digit',month:'short',timeZone:'UTC'}) : '—';
 
-// ── Transformar filas planas → clientes agrupados ────────────────────────────
+const CLIENTS_PER_PAGE = 50;
+
+let allClientes      = [];   // todos los clientes cargados (sin filtrar)
+let filteredClientes = [];   // resultado tras aplicar filtros
+let currentPage      = 1;
+
+// ── Agrupar filas planas → clientes ──────────────────────────────────────────
 function groupRows(rows) {
   const map = new Map();
   for (const r of rows) {
     if (!map.has(r.customer_id)) {
       map.set(r.customer_id, {
-        customer_id: r.customer_id,
-        email:       r.email,
-        country:     r.country,
-        total_cajas: r.total_cajas_cliente,
+        customer_id:   r.customer_id,
+        email:         r.email,
+        country:       r.country,
+        total_cajas:   r.total_cajas_cliente,
         total_ordenes: r.total_ordenes_cliente,
         ordenes: []
       });
@@ -185,24 +209,23 @@ function groupRows(rows) {
     let prods = [];
     try { prods = JSON.parse(r.productos || '[]'); } catch {}
     map.get(r.customer_id).ordenes.push({
-      order_number: r.order_number,
-      fecha_recibido:   r.fecha_recibido,
-      fecha_confirmado: r.fecha_confirmado,
-      cajas_orden:  r.cajas_orden,
-      fabricantes:  r.fabricantes || '',
-      productos:    prods.filter(p => p.cantidad > 0 && p.tipo !== null)
+      order_number:    r.order_number,
+      fecha_recibido:  r.fecha_recibido,
+      fecha_confirmado:r.fecha_confirmado,
+      cajas_orden:     r.cajas_orden,
+      fabricantes:     r.fabricantes || '',
+      productos:       prods.filter(p => p.cantidad > 0 && p.tipo !== null)
     });
   }
   return [...map.values()];
 }
 
-// ── Render ────────────────────────────────────────────────────────────────────
+// ── Helpers de render ─────────────────────────────────────────────────────────
 function badgeClass(n) {
   if (n >= 6) return 'badge-6up';
   if (n >= 4) return 'badge-4';
   return 'badge-2';
 }
-
 function tipoClass(tipo) {
   if (!tipo) return 'tipo-otro';
   const t = tipo.toLowerCase();
@@ -212,7 +235,7 @@ function tipoClass(tipo) {
   return 'tipo-otro';
 }
 
-function renderCliente(c, idx) {
+function renderCliente(c, globalIdx) {
   const ordenesHtml = c.ordenes.map(o => {
     const prodsHtml = o.productos.map(p => `
       <div class="prod-item">
@@ -221,7 +244,6 @@ function renderCliente(c, idx) {
         <span class="prod-marca">${p.marca || ''}</span>
         <span class="prod-cant">×${p.cantidad}</span>
       </div>`).join('');
-
     return `
       <div class="orden-row">
         <div class="orden-meta">
@@ -249,7 +271,7 @@ function renderCliente(c, idx) {
   return `
     <div class="cliente-card" id="card-${c.customer_id}">
       <div class="cliente-header" onclick="toggleCard('${c.customer_id}')">
-        <span class="cliente-rank">${idx+1}</span>
+        <span class="cliente-rank">${globalIdx + 1}</span>
         <span class="cliente-email">${c.email}</span>
         <span class="cliente-pais">${flag(c.country)}</span>
         ${pedidoHdr}
@@ -260,79 +282,134 @@ function renderCliente(c, idx) {
     </div>`;
 }
 
-function renderTable(clientes) {
-  const wrap = document.getElementById('tableWrap');
-  if (!clientes.length) {
+// ── Render tabla (página actual) ──────────────────────────────────────────────
+function renderTable() {
+  const wrap  = document.getElementById('tableWrap');
+  if (!filteredClientes.length) {
     wrap.innerHTML = `<div class="status-box"><p>Sin resultados para los filtros aplicados.</p></div>`;
+    document.getElementById('pagerWrap').innerHTML = '';
     return;
   }
-  wrap.innerHTML = clientes.map((c, i) => renderCliente(c, i)).join('');
+  const start  = (currentPage - 1) * CLIENTS_PER_PAGE;
+  const slice  = filteredClientes.slice(start, start + CLIENTS_PER_PAGE);
+  wrap.innerHTML = slice.map((c, i) => renderCliente(c, start + i)).join('');
+  renderPager();
 }
 
-function renderStats(clientes) {
-  const totalCajas   = clientes.reduce((s,c) => s + c.total_cajas, 0);
-  const totalOrdenes = clientes.reduce((s,c) => s + c.total_ordenes, 0);
-  const paises = [...new Set(clientes.map(c => c.country).filter(Boolean))].sort();
-  document.getElementById('statsBar').innerHTML = `
-    <div class="stat-chip">👥 <b>${clientes.length}</b> clientes</div>
-    <div class="stat-chip">📦 <b>${totalCajas}</b> cajas total</div>
-    <div class="stat-chip">🛒 <b>${totalOrdenes}</b> órdenes</div>
-    <div class="stat-chip">🌎 <b>${paises.length}</b> países</div>`;
+// ── Paginador ─────────────────────────────────────────────────────────────────
+function renderPager() {
+  const total = filteredClientes.length;
+  const pages = Math.ceil(total / CLIENTS_PER_PAGE);
+  const pw    = document.getElementById('pagerWrap');
+
+  if (pages <= 1) { pw.innerHTML = ''; return; }
+
+  const p = currentPage;
+  let html = `<div class="pager">`;
+  html += `<button class="pager-btn" onclick="goToPage(${p-1})" ${p===1?'disabled':''}>← Anterior</button>`;
+
+  // páginas visibles: siempre primera, última, y ±2 del actual
+  const visible = new Set([1, pages, p-2, p-1, p, p+1, p+2].filter(x => x>=1 && x<=pages));
+  let prev = 0;
+  for (const pg of [...visible].sort((a,b)=>a-b)) {
+    if (prev && pg - prev > 1) html += `<span class="pager-ellipsis">…</span>`;
+    html += `<button class="pager-btn${pg===p?' active':''}" onclick="goToPage(${pg})">${pg}</button>`;
+    prev = pg;
+  }
+
+  html += `<button class="pager-btn" onclick="goToPage(${p+1})" ${p===pages?'disabled':''}>Siguiente →</button>`;
+  html += `<span class="pager-info">Página ${p} de ${pages} · ${total.toLocaleString('es-MX')} clientes</span>`;
+  html += `</div>`;
+  pw.innerHTML = html;
 }
 
-function populatePaisFilter(clientes) {
+function goToPage(p) {
+  const pages = Math.ceil(filteredClientes.length / CLIENTS_PER_PAGE);
+  currentPage = Math.max(1, Math.min(p, pages));
+  renderTable();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ── Stats bar ─────────────────────────────────────────────────────────────────
+function renderStats() {
+  const all = allClientes;
+  const fil = filteredClientes;
+  const isFiltered = fil.length !== all.length;
+
+  const totalCajasAll   = all.reduce((s,c) => s + c.total_cajas, 0);
+  const totalOrdenesAll = all.reduce((s,c) => s + c.total_ordenes, 0);
+  const paisesAll       = new Set(all.map(c => c.country).filter(Boolean)).size;
+
+  let html = `
+    <span class="filter-label">Total global</span>
+    <div class="stat-chip"><b>${all.length.toLocaleString('es-MX')}</b> clientes</div>
+    <div class="stat-chip">📦 <b>${totalCajasAll.toLocaleString('es-MX')}</b> cajas</div>
+    <div class="stat-chip">🛒 <b>${totalOrdenesAll.toLocaleString('es-MX')}</b> órdenes</div>
+    <div class="stat-chip">🌎 <b>${paisesAll}</b> países</div>`;
+
+  if (isFiltered) {
+    const totalCajasFil   = fil.reduce((s,c) => s + c.total_cajas, 0);
+    const totalOrdenesFil = fil.reduce((s,c) => s + c.total_ordenes, 0);
+    const paisesFil       = new Set(fil.map(c => c.country).filter(Boolean)).size;
+    html += `
+      <div class="stats-divider"></div>
+      <span class="filter-label">Filtro activo</span>
+      <div class="stat-chip highlight"><b>${fil.length.toLocaleString('es-MX')}</b> clientes</div>
+      <div class="stat-chip highlight">📦 <b>${totalCajasFil.toLocaleString('es-MX')}</b> cajas</div>
+      <div class="stat-chip highlight">🛒 <b>${totalOrdenesFil.toLocaleString('es-MX')}</b> órdenes</div>
+      <div class="stat-chip highlight">🌎 <b>${paisesFil}</b> países</div>`;
+  }
+
+  document.getElementById('statsBar').innerHTML = html;
+}
+
+// ── Filtros ───────────────────────────────────────────────────────────────────
+function applyFilters() {
+  const q    = document.getElementById('searchInput').value.toLowerCase();
+  const pais = document.getElementById('paisFilter').value;
+  const fab  = document.getElementById('fabFilter').value;
+
+  filteredClientes = allClientes.filter(c => {
+    if (q    && !c.email.toLowerCase().includes(q)) return false;
+    if (pais && c.country !== pais)                  return false;
+    if (fab  && !c.ordenes.some(o => (o.fabricantes||'').includes(fab))) return false;
+    return true;
+  });
+
+  // actualizar label del botón CSV
+  const totalOrdFil = filteredClientes.reduce((s,c) => s + c.total_ordenes, 0);
+  document.getElementById('btnCsv').textContent = `⬇️ Descargar CSV (${totalOrdFil.toLocaleString('es-MX')} órdenes)`;
+
+  currentPage = 1;
+  renderStats();
+  renderTable();
+}
+
+function populatePaisFilter() {
   const sel    = document.getElementById('paisFilter');
   const actual = sel.value;
-  const paises = [...new Set(clientes.map(c => c.country).filter(Boolean))].sort();
+  const paises = [...new Set(allClientes.map(c => c.country).filter(Boolean))].sort();
   sel.innerHTML = `<option value="">🌎 Todos los países</option>` +
     paises.map(p => `<option value="${p}">${flag(p)}</option>`).join('');
   sel.value = actual;
 }
-function populateFabFilter(clientes) {
+function populateFabFilter() {
   const sel    = document.getElementById('fabFilter');
   const actual = sel.value;
   const fabs   = [...new Set(
-    clientes.flatMap(c => c.ordenes.flatMap(o => (o.fabricantes||'').split(', '))).filter(Boolean)
+    allClientes.flatMap(c => c.ordenes.flatMap(o => (o.fabricantes||'').split(', '))).filter(Boolean)
   )].sort();
   sel.innerHTML = `<option value="">🏭 Todos los fabricantes</option>` +
     fabs.map(f => `<option value="${f}">${f}</option>`).join('');
   sel.value = actual;
 }
 
-// ── Filtros ───────────────────────────────────────────────────────────────────
-function applyFilters() {
-  const q   = document.getElementById('searchInput').value.toLowerCase();
-  const pais = document.getElementById('paisFilter').value;
-  const fab  = document.getElementById('fabFilter').value;
-  const filtered = allClientes.filter(c => {
-    if (q    && !c.email.toLowerCase().includes(q)) return false;
-    if (pais && c.country !== pais)                  return false;
-    if (fab  && !c.ordenes.some(o => (o.fabricantes||'').includes(fab))) return false;
-    return true;
-  });
-  renderTable(filtered);
-  renderStats(filtered);
-}
-
-// ── Toggle card / productos ───────────────────────────────────────────────────
+// ── Toggle card ───────────────────────────────────────────────────────────────
 function toggleCard(id) {
   document.getElementById('card-' + id).classList.toggle('open');
 }
 
-
-// ── Descarga CSV ──────────────────────────────────────────────────────────────
-function getFilteredClientes() {
-  const q    = document.getElementById('searchInput').value.toLowerCase();
-  const pais = document.getElementById('paisFilter').value;
-  const fab  = document.getElementById('fabFilter').value;
-  return allClientes.filter(c => {
-    if (q    && !c.email.toLowerCase().includes(q)) return false;
-    if (pais && c.country !== pais)                  return false;
-    if (fab  && !c.ordenes.some(o => (o.fabricantes||'').includes(fab))) return false;
-    return true;
-  });
-}
-
+// ── Descarga CSV — TODAS las filas filtradas (sin límite de página) ───────────
 function escCsv(v) {
   if (v == null) return '';
   const s = String(v);
@@ -340,38 +417,41 @@ function escCsv(v) {
 }
 
 function downloadCSV() {
-  const clientes = getFilteredClientes();
-  if (!clientes.length) { alert('No hay clientes para exportar con los filtros actuales.'); return; }
+  if (!filteredClientes.length) {
+    alert('No hay clientes para exportar con los filtros actuales.');
+    return;
+  }
 
   const headers = [
     'Rank','Customer ID','Email','País',
-    'Total Cajas','Total Órdenes',
+    'Total Cajas Cliente','Total Órdenes Cliente',
     'Núm. Orden','Fecha Recibido','Fecha Confirmado','Cajas Orden','Fabricantes',
     'Productos'
   ];
 
   const rows = [];
-  clientes.forEach((c, idx) => {
+  // Recorre TODOS los filtrados, no solo la página visible
+  filteredClientes.forEach((c, idx) => {
     if (!c.ordenes.length) {
-      rows.push([idx+1, c.customer_id, c.email, c.country, c.total_cajas, c.total_ordenes, '','','','','','']);
+      rows.push([idx+1, c.customer_id, c.email, c.country, c.total_cajas, c.total_ordenes,
+        '','','','','','']);
     } else {
       c.ordenes.forEach(o => {
         const prodsStr = o.productos.length
           ? o.productos.map(p => `${p.nombre}${p.marca ? ' ('+p.marca+')' : ''} ×${p.cantidad}`).join(' | ')
           : '';
         rows.push([idx+1, c.customer_id, c.email, c.country, c.total_cajas, c.total_ordenes,
-          o.order_number, o.fecha_recibido||'', o.fecha_confirmado||'', o.cajas_orden, o.fabricantes||'',
-          prodsStr]);
+          o.order_number, o.fecha_recibido||'', o.fecha_confirmado||'', o.cajas_orden,
+          o.fabricantes||'', prodsStr]);
       });
     }
   });
 
-  const csv = [headers, ...rows].map(r => r.map(escCsv).join(',')).join('\r\n');
+  const csv  = [headers, ...rows].map(r => r.map(escCsv).join(',')).join('\r\n');
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
-  const now  = new Date();
-  const ts   = now.toISOString().slice(0,10);
+  const ts   = new Date().toISOString().slice(0,10);
   a.href     = url;
   a.download = `clientes_lentesplus_${ts}.csv`;
   document.body.appendChild(a);
@@ -385,29 +465,39 @@ async function loadClientes() {
   const btn  = document.getElementById('btnRefresh');
   const wrap = document.getElementById('tableWrap');
   btn.disabled = true; btn.textContent = '⏳ Cargando…';
+  document.getElementById('btnCsv').disabled = true;
   wrap.innerHTML = `<div class="status-box"><div class="spinner"></div><p>Consultando Metabase…</p></div>`;
   document.getElementById('statsBar').innerHTML = `<div class="stat-chip">⏳ Cargando…</div>`;
+  document.getElementById('pagerWrap').innerHTML = '';
 
   try {
     const res  = await fetch('/api/clientes');
     const json = await res.json();
     if (!res.ok || json.error) throw new Error(json.error || 'Error HTTP ' + res.status);
 
-    allClientes = groupRows(json.rows || []);
-    populatePaisFilter(allClientes);
-    populateFabFilter(allClientes);
-    renderStats(allClientes);
-    renderTable(allClientes);
+    allClientes      = groupRows(json.rows || []);
+    filteredClientes = [...allClientes];
+    currentPage      = 1;
 
-    const now = new Date();
+    populatePaisFilter();
+    populateFabFilter();
+    renderStats();
+    renderTable();
+
+    // label del botón CSV con total de órdenes
+    const totalOrd = allClientes.reduce((s,c) => s + c.total_ordenes, 0);
+    document.getElementById('btnCsv').textContent = `⬇️ Descargar CSV (${totalOrd.toLocaleString('es-MX')} órdenes)`;
+
     document.getElementById('lastUpdate').textContent =
-      'Actualizado: ' + now.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+      'Actualizado: ' + new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
 
   } catch (err) {
     wrap.innerHTML = `<div class="status-box"><p>⚠️ No se pudo cargar la información</p><small>${err.message}</small></div>`;
     document.getElementById('statsBar').innerHTML = `<div class="stat-chip" style="color:var(--red)">⚠️ Error</div>`;
   } finally {
-    btn.disabled = false; btn.textContent = '🔄 Actualizar';
+    btn.disabled = false;
+    btn.textContent = '🔄 Actualizar';
+    document.getElementById('btnCsv').disabled = false;
   }
 }
 

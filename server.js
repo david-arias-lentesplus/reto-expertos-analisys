@@ -21,7 +21,10 @@ const METABASE_MCP_URL = 'https://mcp.livocompany.com/metabase/mcp';
 const METABASE_MCP_KEY = 'af7bd32eba834141058b8b453f07db8437dbd140bac1c92499e445e63912776b';
 const METABASE_DB_ID   = 2;
 
-const CLIENTES_SQL = `
+const PAGE_SIZE = 500;
+const MAX_PAGES = 40; // tope de seguridad → 20 000 filas
+
+const CLIENTES_SQL_BASE = `
 WITH clientes_ok AS (
   SELECT customer_id
   FROM Silver.sales
@@ -83,53 +86,79 @@ SELECT
   p.productos::text AS productos
 FROM ordenes o
 LEFT JOIN productos p ON p.order_number = o.order_number
-ORDER BY o.total_cajas_cliente DESC, o.email, o.fecha_recibido
-`;
+ORDER BY o.total_cajas_cliente DESC, o.email, o.fecha_recibido`;
 
-function callMetabaseMCP(sql, callback) {
-  const body = JSON.stringify({
-    jsonrpc: '2.0',
-    id: 1,
-    method: 'tools/call',
-    params: {
-      name: 'execute',
-      arguments: { database_id: METABASE_DB_ID, query: sql, row_limit: 500 }
-    }
-  });
+function buildPagedSQL(offset) {
+  return CLIENTES_SQL_BASE + `\nLIMIT ${PAGE_SIZE} OFFSET ${offset}\n`;
+}
 
-  const urlObj  = new URL(METABASE_MCP_URL);
-  const options = {
-    hostname: urlObj.hostname,
-    path:     urlObj.pathname + '?api_key=' + METABASE_MCP_KEY,
-    method:   'POST',
-    headers: {
-      'Content-Type':   'application/json',
-      'Accept':         'application/json, text/event-stream',
-
-      'Content-Length': Buffer.byteLength(body),
-    },
-  };
-
-  const req = https.request(options, res => {
-    let raw = '';
-    res.on('data', chunk => raw += chunk);
-    res.on('end', () => {
-      try {
-        // MCP puede responder con SSE "data: ..." o JSON plano
-        const lines = raw.split('\n').filter(l => l.startsWith('data:'));
-        const jsonStr = lines.length
-          ? lines.map(l => l.replace(/^data:\s*/, '')).join('')
-          : raw;
-        callback(null, JSON.parse(jsonStr));
-      } catch (e) {
-        callback(new Error('Parse error: ' + raw.slice(0, 300)));
+function callMetabaseMCP(sql) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: {
+        name: 'execute',
+        arguments: { database_id: METABASE_DB_ID, query: sql, row_limit: PAGE_SIZE }
       }
     });
-  });
 
-  req.on('error', callback);
-  req.write(body);
-  req.end();
+    const urlObj  = new URL(METABASE_MCP_URL);
+    const options = {
+      hostname: urlObj.hostname,
+      path:     urlObj.pathname + '?api_key=' + METABASE_MCP_KEY,
+      method:   'POST',
+      headers: {
+        'Content-Type':   'application/json',
+        'Accept':         'application/json, text/event-stream',
+        'Content-Length': Buffer.byteLength(body),
+      },
+    };
+
+    const req = https.request(options, res => {
+      let raw = '';
+      res.on('data', chunk => raw += chunk);
+      res.on('end', () => {
+        try {
+          const lines = raw.split('\n').filter(l => l.startsWith('data:'));
+          const jsonStr = lines.length
+            ? lines.map(l => l.replace(/^data:\s*/, '')).join('')
+            : raw;
+          resolve(JSON.parse(jsonStr));
+        } catch (e) {
+          reject(new Error('Parse error: ' + raw.slice(0, 300)));
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
+}
+
+async function fetchAllRows() {
+  const allRows = [];
+  let offset    = 0;
+  let page      = 0;
+
+  while (page < MAX_PAGES) {
+    const sql       = buildPagedSQL(offset);
+    const mcpResult = await callMetabaseMCP(sql);
+    const { rows }  = parseRows(mcpResult);
+
+    console.log(`[Metabase] página ${page + 1}: ${rows.length} filas (offset ${offset})`);
+    if (!rows.length) break;
+    allRows.push(...rows);
+    if (rows.length < PAGE_SIZE) break; // última página
+
+    offset += PAGE_SIZE;
+    page++;
+  }
+
+  console.log(`[Metabase] total filas cargadas: ${allRows.length}`);
+  return allRows;
 }
 
 // Extrae filas del resultado MCP → [{email, customer_id, total_cajas, total_ordenes}, ...]
@@ -177,23 +206,17 @@ http.createServer((req, res) => {
 
   // ── API: clientes con 2+ cajas ────────────────────────────────────────────
   if (req.url === '/api/clientes' && req.method === 'GET') {
-    callMetabaseMCP(CLIENTES_SQL, (err, mcpResult) => {
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Content-Type', 'application/json');
-      if (err) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    fetchAllRows()
+      .then(rows => {
+        res.writeHead(200);
+        res.end(JSON.stringify({ rows, rowCount: rows.length }));
+      })
+      .catch(err => {
         res.writeHead(500);
         res.end(JSON.stringify({ error: err.message }));
-        return;
-      }
-      try {
-        const { rows, rowCount } = parseRows(mcpResult);
-        res.writeHead(200);
-        res.end(JSON.stringify({ rows, rowCount }));
-      } catch (e) {
-        res.writeHead(500);
-        res.end(JSON.stringify({ error: e.message, raw: JSON.stringify(mcpResult).slice(0, 500) }));
-      }
-    });
+      });
     return;
   }
 

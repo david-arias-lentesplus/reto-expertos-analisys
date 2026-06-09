@@ -1,6 +1,7 @@
 /**
  * Vercel Serverless Function: /api/clientes
- * Reemplaza el endpoint del server.js local para funcionar en Vercel.
+ * Pagina automáticamente contra Metabase (500 filas/página via LIMIT+OFFSET)
+ * hasta traer todos los registros disponibles.
  */
 
 const https = require('https');
@@ -8,8 +9,11 @@ const https = require('https');
 const METABASE_MCP_URL = 'https://mcp.livocompany.com/metabase/mcp';
 const METABASE_MCP_KEY = 'af7bd32eba834141058b8b453f07db8437dbd140bac1c92499e445e63912776b';
 const METABASE_DB_ID   = 2;
+const PAGE_SIZE        = 500;   // límite que acepta el MCP por llamada
+const MAX_PAGES        = 40;    // tope de seguridad → 20 000 filas máximo
 
-const CLIENTES_SQL = `
+// Consulta base — se le inyecta LIMIT / OFFSET en cada página
+const CLIENTES_SQL_BASE = `
 WITH clientes_ok AS (
   SELECT customer_id
   FROM Silver.sales
@@ -71,8 +75,11 @@ SELECT
   p.productos::text AS productos
 FROM ordenes o
 LEFT JOIN productos p ON p.order_number = o.order_number
-ORDER BY o.total_cajas_cliente DESC, o.email, o.fecha_recibido
-`;
+ORDER BY o.total_cajas_cliente DESC, o.email, o.fecha_recibido`;
+
+function buildPagedSQL(offset) {
+  return CLIENTES_SQL_BASE + `\nLIMIT ${PAGE_SIZE} OFFSET ${offset}\n`;
+}
 
 function callMetabaseMCP(sql) {
   return new Promise((resolve, reject) => {
@@ -82,7 +89,7 @@ function callMetabaseMCP(sql) {
       method: 'tools/call',
       params: {
         name: 'execute',
-        arguments: { database_id: METABASE_DB_ID, query: sql, row_limit: 500 }
+        arguments: { database_id: METABASE_DB_ID, query: sql, row_limit: PAGE_SIZE }
       }
     });
 
@@ -144,6 +151,28 @@ function parseRows(mcpResult) {
   return { rows, rowCount: inner.row_count || len };
 }
 
+// Recorre todas las páginas hasta agotar los resultados
+async function fetchAllRows() {
+  const allRows = [];
+  let offset    = 0;
+  let page      = 0;
+
+  while (page < MAX_PAGES) {
+    const sql       = buildPagedSQL(offset);
+    const mcpResult = await callMetabaseMCP(sql);
+    const { rows }  = parseRows(mcpResult);
+
+    if (!rows.length) break;            // sin más datos
+    allRows.push(...rows);
+    if (rows.length < PAGE_SIZE) break; // última página (parcial)
+
+    offset += PAGE_SIZE;
+    page++;
+  }
+
+  return allRows;
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Content-Type', 'application/json');
@@ -154,9 +183,8 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const mcpResult = await callMetabaseMCP(CLIENTES_SQL);
-    const { rows, rowCount } = parseRows(mcpResult);
-    res.status(200).json({ rows, rowCount });
+    const rows = await fetchAllRows();
+    res.status(200).json({ rows, rowCount: rows.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
