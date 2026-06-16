@@ -38,14 +38,23 @@ function parseCSVText(text) {
   const iApe = idx('Apellidos');
   const iCor = idx('Correo electrónico');
 
+  // Valores que se consideran "sin pronóstico" aunque aparezcan en el CSV
+  // (celdas vacías, guiones, N/A, etc.)
+  const SIN_DATO = /^[-–—]+$|^n\.?a\.?$|^$/i;
+
   return rows.slice(1).map((row, n) => {
     const pronosticos = {};
     Object.entries(partidoColMap).forEach(([col, ci]) => {
       const v = row[ci];
-      if (v !== undefined && v !== null && v.toString().trim() !== '') {
-        const num = parseInt(v, 10);
-        if (!isNaN(num)) pronosticos[col] = num;
-      }
+      if (v === undefined || v === null) return;
+      const raw = v.toString().trim();
+
+      // Ignorar vacíos, guiones y similares antes de intentar parseInt
+      if (SIN_DATO.test(raw)) return;
+
+      const num = parseInt(raw, 10);
+      // Solo valores enteros no-negativos son válidos como goles
+      if (!isNaN(num) && num >= 0) pronosticos[col] = num;
     });
     return {
       id:            row[0] || ('p-' + n),
@@ -104,14 +113,32 @@ async function fetchResultadosSheets() {
     if (iLoc < 0) iLoc = 1;
     if (iVis < 0) iVis = 2;
 
+    // Fecha de hoy en formato YYYY-MM-DD (UTC) para comparar con partido.fecha
+    const hoy = new Date().toISOString().slice(0, 10);
+
+    // Construir mapa rápido de fechas por partido_id desde PARTIDOS global
+    const fechaPartido = {};
+    if (typeof PARTIDOS !== 'undefined') {
+      PARTIDOS.forEach(p => { fechaPartido[p.id] = p.fecha; });
+    }
+
     const resultados = {};
     dataRows.forEach(row => {
       const id  = parseInt(row[iId],  10);
       const loc = parseInt(row[iLoc], 10);
       const vis = parseInt(row[iVis], 10);
-      if (!isNaN(id) && !isNaN(loc) && !isNaN(vis) && id > 0) {
-        resultados[id] = { local: loc, visitante: vis };
+
+      if (isNaN(id) || isNaN(loc) || isNaN(vis) || id <= 0) return;
+
+      // ── GUARDIA: solo aceptar resultado si el partido ya se jugó ──────────
+      // Si no tenemos la fecha del partido (no hay PARTIDOS global), aceptamos.
+      const fechaP = fechaPartido[id];
+      if (fechaP && fechaP > hoy) {
+        console.warn(`[Resultados] Partido ${id} (${fechaP}) ignorado — aún no se juega`);
+        return;
       }
+
+      resultados[id] = { local: loc, visitante: vis };
     });
 
     const count = Object.keys(resultados).length;
@@ -128,18 +155,29 @@ function calcularPuntosParticipante(pronosticos, resultados) {
   let total = 0;
   const detalle = [];
 
+  // Fecha de hoy en YYYY-MM-DD para comparar con partido.fecha
+  const hoy = new Date().toISOString().slice(0, 10);
+
   PARTIDOS.forEach(partido => {
     const keyA      = 'partido-' + partido.id + 'a';
     const keyB      = 'partido-' + partido.id + 'b';
     const resultado = resultados[partido.id];
 
+    // ── Pronóstico: ambos lados deben estar presentes (no null) ──────────────
     const pronLocal     = pronosticos[keyA] != null ? pronosticos[keyA] : null;
     const pronVisitante = pronosticos[keyB] != null ? pronosticos[keyB] : null;
     const realLocal     = resultado ? resultado.local     : null;
     const realVisitante = resultado ? resultado.visitante : null;
 
+    // ── GUARDIA DE FECHA: el partido debe haber ocurrido ya ──────────────────
+    // Esto evita sumar puntos por:
+    //   · Partidos futuros con resultados pre-cargados en la hoja
+    //   · Partidos sin resultado real marcados accidentalmente como 0-0
+    const partidoJugado = partido.fecha <= hoy;
+
     let ptos = 0;
     if (
+      partidoJugado &&
       pronLocal !== null && pronVisitante !== null &&
       realLocal !== null && realVisitante !== null &&
       pronLocal === realLocal && pronVisitante === realVisitante
@@ -160,7 +198,7 @@ function calcularPuntosParticipante(pronosticos, resultados) {
       realLocal,
       realVisitante,
       puntos:       ptos,
-      jugado:       realLocal !== null && realVisitante !== null,
+      jugado:       partidoJugado && realLocal !== null && realVisitante !== null,
       pronosticado: pronLocal !== null && pronVisitante !== null,
     });
   });

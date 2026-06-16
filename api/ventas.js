@@ -1,7 +1,6 @@
 /**
- * Vercel Serverless Function: /api/clientes
- * Pagina automáticamente contra Metabase (500 filas/página via LIMIT+OFFSET)
- * hasta traer todos los registros disponibles.
+ * Vercel Serverless Function: /api/ventas
+ * Todos los registros de ventas (sin filtro de 2+ cajas).
  *
  * Caché stale-while-revalidate en /tmp (Vercel):
  *  · Si el archivo existe  →  responde INMEDIATAMENTE desde disco (ms)
@@ -19,11 +18,10 @@ const PAGE_SIZE        = 500;
 const MAX_PAGES        = 40;
 
 // ── Caché en /tmp ─────────────────────────────────────────────────────────────
-const CACHE_FILE = '/tmp/lentesplus_clientes.json';
-const FRESH_TTL  = 15 * 60 * 1000;       // < 15 min → fresco
-const MAX_AGE    = 24 * 60 * 60 * 1000;  // > 24 h   → ignorar
+const CACHE_FILE = '/tmp/lentesplus_ventas.json';
+const FRESH_TTL  = 15 * 60 * 1000;
+const MAX_AGE    = 24 * 60 * 60 * 1000;
 
-// Evita refrescos duplicados dentro de la misma instancia caliente
 let isRefreshing = false;
 
 function getCacheFile() {
@@ -33,7 +31,7 @@ function getCacheFile() {
     if (age > MAX_AGE) return null;
     const rows   = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
     const ageMin = Math.round(age / 60000);
-    console.log(`[Cache] HIT clientes (${rows.length} filas, ${ageMin} min)`);
+    console.log(`[Cache] HIT ventas (${rows.length} filas, ${ageMin} min)`);
     return { rows, age, ageMin, stale: age > FRESH_TTL };
   } catch {
     return null;
@@ -43,25 +41,15 @@ function getCacheFile() {
 function setCacheFile(rows) {
   try {
     fs.writeFileSync(CACHE_FILE, JSON.stringify(rows));
-    console.log(`[Cache] Guardado clientes.json (${rows.length} filas)`);
+    console.log(`[Cache] Guardado ventas.json (${rows.length} filas)`);
   } catch (e) {
     console.error('[Cache] Error escribiendo:', e.message);
   }
 }
 
 // ── SQL ───────────────────────────────────────────────────────────────────────
-const CLIENTES_SQL_BASE = `
-WITH clientes_ok AS (
-  SELECT customer_id
-  FROM Silver.sales
-  WHERE empresa = 'lentesplus'
-    AND (status = 'complete' OR status = 'processing')
-    AND has_lenses = true
-    AND confirmed_at BETWEEN '2026-06-01' AND '2026-07-20'
-  GROUP BY customer_id
-  HAVING SUM(items_lenses_actual) >= 2
-),
-ordenes AS (
+const VENTAS_SQL_BASE = `
+WITH ordenes AS (
   SELECT
     s.customer_id,
     s.email,
@@ -73,7 +61,6 @@ ordenes AS (
     SUM(s.items_lenses_actual) OVER (PARTITION BY s.customer_id)::int AS total_cajas_cliente,
     COUNT(s.order_number)      OVER (PARTITION BY s.customer_id)::int AS total_ordenes_cliente
   FROM Silver.sales s
-  INNER JOIN clientes_ok c ON c.customer_id = s.customer_id
   WHERE s.empresa = 'lentesplus'
     AND (s.status = 'complete' OR s.status = 'processing')
     AND s.has_lenses = true
@@ -115,7 +102,7 @@ LEFT JOIN productos p ON p.order_number = o.order_number
 ORDER BY o.total_cajas_cliente DESC, o.email, o.fecha_recibido`;
 
 function buildPagedSQL(offset) {
-  return CLIENTES_SQL_BASE + `\nLIMIT ${PAGE_SIZE} OFFSET ${offset}\n`;
+  return VENTAS_SQL_BASE + `\nLIMIT ${PAGE_SIZE} OFFSET ${offset}\n`;
 }
 
 function callMetabaseMCP(sql) {
@@ -198,7 +185,7 @@ async function fetchAllRows() {
     const mcpResult = await callMetabaseMCP(sql);
     const { rows }  = parseRows(mcpResult);
 
-    console.log(`[clientes] página ${page + 1}: ${rows.length} filas`);
+    console.log(`[ventas] página ${page + 1}: ${rows.length} filas`);
     if (!rows.length) break;
     allRows.push(...rows);
     if (rows.length < PAGE_SIZE) break;
@@ -207,17 +194,17 @@ async function fetchAllRows() {
     page++;
   }
 
-  console.log(`[clientes] total: ${allRows.length} filas`);
+  console.log(`[ventas] total: ${allRows.length} filas`);
   return allRows;
 }
 
 function bgRefresh() {
-  if (isRefreshing) { console.log('[BG] clientes ya está refrescando'); return; }
+  if (isRefreshing) { console.log('[BG] ventas ya está refrescando'); return; }
   isRefreshing = true;
-  console.log('[BG] Iniciando refresco de clientes en background...');
+  console.log('[BG] Iniciando refresco de ventas en background...');
   fetchAllRows()
     .then(rows  => setCacheFile(rows))
-    .catch(err  => console.error('[BG] Error clientes:', err.message))
+    .catch(err  => console.error('[BG] Error ventas:', err.message))
     .finally(   () => { isRefreshing = false; });
 }
 
@@ -233,7 +220,6 @@ module.exports = async function handler(req, res) {
 
   const force = req.query && req.query.force === '1';
 
-  // Servir desde /tmp si hay caché válido (excepto ?force=1)
   if (!force) {
     const cached = getCacheFile();
     if (cached) {
@@ -250,7 +236,6 @@ module.exports = async function handler(req, res) {
     }
   }
 
-  // Sin caché o forzado: consultar Metabase
   try {
     const rows = await fetchAllRows();
     setCacheFile(rows);
