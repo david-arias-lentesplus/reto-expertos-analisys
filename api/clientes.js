@@ -7,6 +7,11 @@
  *  · Si el archivo existe  →  responde INMEDIATAMENTE desde disco (ms)
  *  · Si tiene > FRESH_TTL  →  además lanza refresco en background
  *  · Si no existe          →  espera Metabase, guarda y responde
+ *
+ * OPTIMIZACIONES vs versión anterior:
+ *  1. SQL: un solo scan de Silver.sales (clientes_cajas pre-agrega totales,
+ *     eliminando las window functions de ordenes)
+ *  2. Paginación paralela: CONCURRENCY páginas simultáneas por batch
  */
 
 const https = require('https');
@@ -17,6 +22,7 @@ const METABASE_MCP_KEY = 'af7bd32eba834141058b8b453f07db8437dbd140bac1c92499e445
 const METABASE_DB_ID   = 2;
 const PAGE_SIZE        = 500;
 const MAX_PAGES        = 40;
+const CONCURRENCY      = 5;   // páginas paralelas por batch
 
 // ── Caché en /tmp ─────────────────────────────────────────────────────────────
 const CACHE_FILE = '/tmp/lentesplus_clientes.json';
@@ -49,13 +55,21 @@ function setCacheFile(rows) {
   }
 }
 
-// ── SQL ───────────────────────────────────────────────────────────────────────
+// ── SQL optimizado ────────────────────────────────────────────────────────────
+// CAMBIO: clientes_cajas hace UN SOLO scan y pre-agrega totales por cliente.
+// La versión anterior hacía dos scans a Silver.sales (clientes_ok + ordenes)
+// y calculaba window functions (SUM/COUNT OVER PARTITION) fila por fila.
+// Ahora ordenes lee los totales directamente del JOIN con clientes_cajas.
 const CLIENTES_SQL_BASE = `
-WITH clientes_ok AS (
-  SELECT customer_id
+WITH clientes_cajas AS (
+  -- Un solo scan: filtra clientes válidos Y pre-agrega sus totales
+  SELECT
+    customer_id,
+    SUM(items_lenses_actual)::int AS total_cajas_cliente,
+    COUNT(order_number)::int      AS total_ordenes_cliente
   FROM Silver.sales
   WHERE empresa = 'lentesplus'
-    AND (status = 'complete' OR status = 'processing')
+    AND status IN ('complete', 'processing')
     AND has_lenses = true
     AND confirmed_at BETWEEN '2026-06-01' AND '2026-07-20'
   GROUP BY customer_id
@@ -67,15 +81,15 @@ ordenes AS (
     s.email,
     s.country,
     s.order_number,
-    TO_CHAR(TO_DATE(s.sale_date::text, 'YYYYMMDD'), 'YYYY-MM-DD')          AS fecha_recibido,
-    TO_CHAR(s.confirmed_at AT TIME ZONE 'America/Bogota', 'YYYY-MM-DD')    AS fecha_confirmado,
-    s.items_lenses_actual::int AS cajas_orden,
-    SUM(s.items_lenses_actual) OVER (PARTITION BY s.customer_id)::int AS total_cajas_cliente,
-    COUNT(s.order_number)      OVER (PARTITION BY s.customer_id)::int AS total_ordenes_cliente
+    TO_CHAR(TO_DATE(s.sale_date::text, 'YYYYMMDD'), 'YYYY-MM-DD')       AS fecha_recibido,
+    TO_CHAR(s.confirmed_at AT TIME ZONE 'America/Bogota', 'YYYY-MM-DD') AS fecha_confirmado,
+    s.items_lenses_actual::int  AS cajas_orden,
+    c.total_cajas_cliente,
+    c.total_ordenes_cliente
   FROM Silver.sales s
-  INNER JOIN clientes_ok c ON c.customer_id = s.customer_id
+  INNER JOIN clientes_cajas c ON c.customer_id = s.customer_id
   WHERE s.empresa = 'lentesplus'
-    AND (s.status = 'complete' OR s.status = 'processing')
+    AND s.status IN ('complete', 'processing')
     AND s.has_lenses = true
     AND s.confirmed_at BETWEEN '2026-06-01' AND '2026-07-20'
 ),
@@ -90,12 +104,12 @@ productos AS (
       'fabricante', cp.manufacturer,
       'cantidad',   sp.quantity_actual,
       'tipo',       sp.type
-    ) ORDER BY sp.type, sp.name) AS productos
+    ) ORDER BY sp.type, sp.name)::text AS productos
   FROM Silver.sales_products sp
-  LEFT JOIN Gold.catalog_products cp ON cp.sku = sp.sku
   INNER JOIN ordenes o ON o.order_number = sp.order_number
+  LEFT JOIN Gold.catalog_products cp ON cp.sku = sp.sku
   WHERE sp.empresa = 'lentesplus'
-    AND (sp.status = 'complete' OR sp.status = 'processing')
+    AND sp.status IN ('complete', 'processing')
   GROUP BY sp.order_number
 )
 SELECT
@@ -109,7 +123,7 @@ SELECT
   o.total_cajas_cliente,
   o.total_ordenes_cliente,
   p.fabricantes,
-  p.productos::text AS productos
+  p.productos
 FROM ordenes o
 LEFT JOIN productos p ON p.order_number = o.order_number
 ORDER BY o.total_cajas_cliente DESC, o.email, o.fecha_recibido`;
@@ -188,23 +202,41 @@ function parseRows(mcpResult) {
   return { rows, rowCount: inner.row_count || len };
 }
 
+// ── Paginación paralela ───────────────────────────────────────────────────────
+// CAMBIO: en lugar de esperar page1→page2→page3 en serie,
+// lanza CONCURRENCY páginas en paralelo y avanza hasta que
+// alguna devuelva menos de PAGE_SIZE filas (= última página).
 async function fetchAllRows() {
   const allRows = [];
   let offset    = 0;
-  let page      = 0;
+  let done      = false;
+  let batchNum  = 0;
 
-  while (page < MAX_PAGES) {
-    const sql       = buildPagedSQL(offset);
-    const mcpResult = await callMetabaseMCP(sql);
-    const { rows }  = parseRows(mcpResult);
+  while (!done && offset < MAX_PAGES * PAGE_SIZE) {
+    batchNum++;
+    // Construir offsets del batch actual
+    const batchOffsets = [];
+    for (let i = 0; i < CONCURRENCY; i++) {
+      const off = offset + i * PAGE_SIZE;
+      if (off < MAX_PAGES * PAGE_SIZE) batchOffsets.push(off);
+    }
 
-    console.log(`[clientes] página ${page + 1}: ${rows.length} filas`);
-    if (!rows.length) break;
-    allRows.push(...rows);
-    if (rows.length < PAGE_SIZE) break;
+    console.log(`[clientes] batch ${batchNum}: páginas offset ${batchOffsets[0]}–${batchOffsets[batchOffsets.length - 1]}`);
 
-    offset += PAGE_SIZE;
-    page++;
+    // Lanzar todas en paralelo
+    const results = await Promise.all(
+      batchOffsets.map(off => callMetabaseMCP(buildPagedSQL(off)))
+    );
+
+    for (let i = 0; i < results.length; i++) {
+      const { rows } = parseRows(results[i]);
+      console.log(`[clientes] offset ${batchOffsets[i]}: ${rows.length} filas`);
+      if (!rows.length) { done = true; break; }
+      allRows.push(...rows);
+      if (rows.length < PAGE_SIZE) { done = true; break; }
+    }
+
+    offset += CONCURRENCY * PAGE_SIZE;
   }
 
   console.log(`[clientes] total: ${allRows.length} filas`);
