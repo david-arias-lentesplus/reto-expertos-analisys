@@ -4,6 +4,35 @@
  * No se usa localStorage para resultados — todo viene del Sheet.
  */
 
+// ── Fusionar participantes duplicados por correo exacto ───────────────────────
+function mergeParticipantsByEmail(participants) {
+  const byEmail = new Map();
+  const noEmail = [];
+
+  for (const p of participants) {
+    const key = p.correo;
+    if (!key) {
+      noEmail.push({ ...p, pronosticos: { ...p.pronosticos } });
+      continue;
+    }
+    if (byEmail.has(key)) {
+      const existing = byEmail.get(key);
+      // Fusionar pronósticos: el registro más reciente gana en conflicto
+      existing.pronosticos = { ...existing.pronosticos, ...p.pronosticos };
+      // Actualizar nombre si el registro anterior estaba vacío
+      if (!existing.nombres && p.nombres) existing.nombres = p.nombres;
+      if (!existing.apellidos && p.apellidos) existing.apellidos = p.apellidos;
+      if (!(existing.nombreCompleto || '').trim() && (p.nombreCompleto || '').trim()) {
+        existing.nombreCompleto = p.nombreCompleto;
+      }
+    } else {
+      byEmail.set(key, { ...p, pronosticos: { ...p.pronosticos } });
+    }
+  }
+
+  return [...byEmail.values(), ...noEmail];
+}
+
 // ── Parsear CSV de pronósticos ────────────────────────────────────────────────
 async function fetchPronosticos() {
   let text;
@@ -42,7 +71,7 @@ function parseCSVText(text) {
   // (celdas vacías, guiones, N/A, etc.)
   const SIN_DATO = /^[-–—]+$|^n\.?a\.?$|^$/i;
 
-  return rows.slice(1).map((row, n) => {
+  const parsed = rows.slice(1).map((row, n) => {
     const pronosticos = {};
     Object.entries(partidoColMap).forEach(([col, ci]) => {
       const v = row[ci];
@@ -68,6 +97,8 @@ function parseCSVText(text) {
       pronosticos,
     };
   }).filter(p => p.nombres || p.correo);
+
+  return mergeParticipantsByEmail(parsed);
 }
 
 // ── Cargar resultados desde Google Sheets (ÚNICA fuente) ──────────────────────

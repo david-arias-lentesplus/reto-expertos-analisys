@@ -178,6 +178,13 @@
 
     .no-results-msg { background:#fef3c7; border:1px solid #fde68a; border-radius:10px; padding:14px 18px; margin:16px 24px; font-size:.87rem; color:#92400e; }
 
+    .search-input {
+      flex:1; min-width:180px; max-width:320px;
+      border:1px solid var(--border); border-radius:8px;
+      padding:7px 14px; font-size:.88rem; outline:none;
+    }
+    .search-input:focus { border-color:var(--navy); box-shadow:0 0 0 2px rgba(13,27,75,.1); }
+
     @media(max-width:640px) {
       .winners-grid { grid-template-columns:1fr 1fr; }
       .podium { gap:8px; }
@@ -213,6 +220,7 @@
 <!-- TOOLBAR -->
 <div class="toolbar">
   <button class="btn btn-primary" onclick="reload()">🔄 Actualizar</button>
+  <input class="search-input" type="text" id="emailSearch" placeholder="&#128269; Buscar por correo…" oninput="applySearch()" autocomplete="off"/>
   <span style="font-size:.82rem;color:var(--gray)">Mostrar:</span>
   <button class="btn btn-outline active" id="btn-all"    onclick="setView('all')">Todos</button>
   <button class="btn btn-outline"        id="btn-active" onclick="setView('active')">Solo con puntos</button>
@@ -233,6 +241,7 @@
 let ranking = [];
 let resultados = {};
 let currentView = 'all';
+let searchQuery = '';
 
 // ── Fase helpers ────────────────────────────────────────────────────────────
 function faseCssClass(faseNum) {
@@ -406,15 +415,26 @@ function faseLabel(f, fase) {
 
 // ── Render main ──────────────────────────────────────────────────────────────
 function renderMain(ranking, resultados, stats) {
-  const list = currentView === 'active'
+  const baseList = currentView === 'active'
     ? ranking.filter(r => r.puntosTotales > 0)
     : ranking;
+  const list = searchQuery
+    ? baseList.filter(r =>
+        (r.correo || '').includes(searchQuery) ||
+        (r.nombreCompleto || '').toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : baseList;
 
+  const searchNote = searchQuery
+    ? `<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:10px 16px;margin:0 24px 12px;font-size:.84rem;color:#92400e;">
+        🔍 Mostrando <b>${list.length}</b> resultado${list.length !== 1 ? 's' : ''} para "<b>${searchQuery}</b>"
+        &nbsp;<button onclick="document.getElementById('emailSearch').value='';applySearch();" style="background:none;border:none;cursor:pointer;color:#92400e;font-weight:700;text-decoration:underline;">Limpiar</button>
+       </div>` : '';
   const noResultsMsg = stats.jugados === 0
     ? `<div class="no-results-msg">⚠️ Aún no hay resultados. Ve a <a href="admin.html">Resultados</a> para ver el estado.</div>`
     : '';
 
-  let html = noResultsMsg;
+  let html = searchNote + noResultsMsg;
 
   // Podium top 3
   if (list.length >= 1) {
@@ -533,6 +553,12 @@ function toggleDetail(btn, rowId) {
   if (!row) return;
   const open = row.classList.toggle('open');
   btn.textContent = open ? '📋 ocultar' : '📋 ver';
+}
+
+function applySearch() {
+  searchQuery = (document.getElementById('emailSearch').value || '').trim();
+  const stats = getStats(resultados);
+  renderMain(ranking, resultados, stats);
 }
 
 init();

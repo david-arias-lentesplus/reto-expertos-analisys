@@ -154,6 +154,18 @@
     @keyframes spin { to { transform:rotate(360deg); } }
     .error-box { color:#dc2626; }
 
+    /* BUSCADOR */
+    .search-bar {
+      padding:10px 24px; background:#fff; border-bottom:1px solid var(--border);
+      display:flex; align-items:center; gap:10px;
+    }
+    .search-bar input {
+      flex:1; max-width:360px; border:1px solid var(--border); border-radius:8px;
+      padding:8px 14px; font-size:.88rem; outline:none;
+    }
+    .search-bar input:focus { border-color:var(--navy); box-shadow:0 0 0 2px rgba(13,27,75,.1); }
+    .search-count { font-size:.82rem; color:var(--gray); white-space:nowrap; }
+
     @media(max-width:600px) {
       .hero h1 { font-size:1.2rem; }
       .table-wrap { padding:12px; }
@@ -185,6 +197,11 @@
 </div>
 
 <!-- TANDA TABS -->
+<div class="search-bar" id="searchBar">
+  <input type="text" id="emailSearch" placeholder="&#128269; Buscar por correo electrónico…" oninput="applySearch()" autocomplete="off"/>
+  <span class="search-count" id="searchCount"></span>
+  <button style="background:none;border:none;cursor:pointer;font-size:.82rem;color:var(--gray);padding:4px 8px;" onclick="clearSearch()" id="btnClearSearch" title="Limpiar búsqueda">✕ Limpiar</button>
+</div>
 <div class="tabs-wrap" id="tandaTabs"></div>
 
 <!-- TABLE -->
@@ -199,6 +216,8 @@
 let allParticipants = [];
 let resultados = {};
 let currentTanda = 0;
+let searchQuery = '';
+let filteredParticipants = [];
 
 // ── Helpers de fase ─────────────────────────────────────────────────────────
 function faseTipoCss(faseNum) {
@@ -226,6 +245,8 @@ async function init() {
   resultados = await fetchResultadosSheets();
   try {
     allParticipants = await fetchPronosticos();
+    filteredParticipants = allParticipants;
+    updateSearchCount();
     renderStats();
     renderTabs();
     renderTable(currentTanda);
@@ -238,8 +259,11 @@ async function init() {
 // ── Stats bar ────────────────────────────────────────────────────────────────
 function renderStats() {
   const stats = getStats(resultados);
+  const shown = filteredParticipants.length;
+  const total = allParticipants.length;
+  const countLabel = searchQuery ? `${shown} de ${total}` : total;
   document.getElementById('statsBar').innerHTML = `
-    <div class="stat-chip">👥 <b>${allParticipants.length}</b> participantes</div>
+    <div class="stat-chip">👥 <b>${countLabel}</b> participantes</div>
     <div class="stat-chip">⚽ <b>${stats.jugados}</b> / ${stats.total} partidos jugados</div>
     <div class="stat-chip">📅 <b>${stats.pendientes}</b> partidos pendientes</div>
     <div class="stat-chip">📦 <b>${TANDAS.length}</b> tandas</div>
@@ -286,14 +310,14 @@ function renderTable(tandaIdx) {
   const faseNum  = partidos[0].fase;
   const fase     = FASES[faseNum];
 
-  if (!allParticipants.length) {
+  if (!filteredParticipants.length) {
     wrap.innerHTML = '<div class="loading-box"><p>Sin participantes encontrados.</p></div>';
     return;
   }
 
   // ── Calcular puntos por participante en esta tanda ──
   const ptsTanda = {};
-  allParticipants.forEach(p => {
+  filteredParticipants.forEach(p => {
     let pts = 0;
     partidos.forEach(partido => {
       const kA = `partido-${partido.id}a`;
@@ -307,10 +331,10 @@ function renderTable(tandaIdx) {
   });
 
   // ── Ganador de esta tanda ──
-  const maxPts = Math.max(...Object.values(ptsTanda));
+  const maxPts = Object.values(ptsTanda).length ? Math.max(...Object.values(ptsTanda)) : 0;
   let tandaWinnerHtml;
   if (maxPts > 0) {
-    const ganadores = allParticipants
+    const ganadores = filteredParticipants
       .filter(p => ptsTanda[p.id] === maxPts)
       .map(p => p.nombreCompleto || p.correo);
     const label = ganadores.length > 1
@@ -336,7 +360,7 @@ function renderTable(tandaIdx) {
   }).join('');
 
   // ── Filas de participantes ──
-  const rows = allParticipants.map(p => {
+  const rows = filteredParticipants.map(p => {
     const cells = partidos.map(partido => {
       const kA = `partido-${partido.id}a`;
       const kB = `partido-${partido.id}b`;
@@ -406,6 +430,38 @@ function shortName(name) {
     'Arabia Saudí':'A. Saudí', 'RI de Irán':'Irán', 'RD Congo':'R.D.Congo',
   };
   return map[name] || name;
+}
+
+function applySearch() {
+  searchQuery = document.getElementById('emailSearch').value.trim();
+  filteredParticipants = searchQuery
+    ? allParticipants.filter(p => (p.correo || '').includes(searchQuery) || (p.nombreCompleto || '').toLowerCase().includes(searchQuery.toLowerCase()))
+    : allParticipants;
+  updateSearchCount();
+  renderStats();
+  renderTable(currentTanda);
+}
+
+function clearSearch() {
+  document.getElementById('emailSearch').value = '';
+  searchQuery = '';
+  filteredParticipants = allParticipants;
+  updateSearchCount();
+  renderStats();
+  renderTable(currentTanda);
+}
+
+function updateSearchCount() {
+  const countEl = document.getElementById('searchCount');
+  const clearBtn = document.getElementById('btnClearSearch');
+  if (!countEl) return;
+  if (searchQuery) {
+    countEl.textContent = filteredParticipants.length + ' resultado' + (filteredParticipants.length !== 1 ? 's' : '');
+    if (clearBtn) clearBtn.style.display = '';
+  } else {
+    countEl.textContent = '';
+    if (clearBtn) clearBtn.style.display = 'none';
+  }
 }
 
 init();
