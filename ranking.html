@@ -185,6 +185,18 @@
     }
     .search-input:focus { border-color:var(--navy); box-shadow:0 0 0 2px rgba(13,27,75,.1); }
 
+    /* País filter chips */
+    .pais-filter { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+    .pais-btn {
+      display:inline-flex; align-items:center; gap:5px;
+      padding:5px 13px; border-radius:20px; border:1.5px solid var(--border);
+      background:#fff; cursor:pointer; font-size:.8rem; font-weight:700;
+      transition:all .18s; white-space:nowrap;
+    }
+    .pais-btn:hover  { border-color:var(--navy); background:#f0f4f8; }
+    .pais-btn.active { background:var(--navy); color:#fff; border-color:var(--navy); }
+    .pais-btn .pais-cnt { font-size:.72rem; opacity:.75; }
+
     @media(max-width:640px) {
       .winners-grid { grid-template-columns:1fr 1fr; }
       .podium { gap:8px; }
@@ -220,10 +232,17 @@
 <!-- TOOLBAR -->
 <div class="toolbar">
   <button class="btn btn-primary" onclick="reload()">🔄 Actualizar</button>
-  <input class="search-input" type="text" id="emailSearch" placeholder="&#128269; Buscar por correo…" oninput="applySearch()" autocomplete="off"/>
+  <input class="search-input" type="text" id="emailSearch" placeholder="&#128269; Buscar por nombre o correo…" oninput="applySearch()" autocomplete="off"/>
   <span style="font-size:.82rem;color:var(--gray)">Mostrar:</span>
   <button class="btn btn-outline active" id="btn-all"    onclick="setView('all')">Todos</button>
   <button class="btn btn-outline"        id="btn-active" onclick="setView('active')">Solo con puntos</button>
+</div>
+<!-- FILTRO PAÍS -->
+<div class="toolbar" style="background:#fffbeb;border-bottom:2px solid #fde68a;padding:8px 24px;gap:8px;">
+  <span style="font-size:.75rem;color:#92400e;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">🌎 País:</span>
+  <div class="pais-filter" id="paisFilterBar">
+    <button class="pais-btn active" id="pais-btn-" onclick="setPais('')">🌐 Todos</button>
+  </div>
 </div>
 
 <!-- GANADORES POR FASE -->
@@ -242,6 +261,14 @@ let ranking = [];
 let resultados = {};
 let currentView = 'all';
 let searchQuery = '';
+let currentPais = '';
+
+const PAIS_INFO = {
+  CO: { nombre: 'Colombia', flag: '🇨🇴' },
+  CL: { nombre: 'Chile',    flag: '🇨🇱' },
+  MX: { nombre: 'México',   flag: '🇲🇽' },
+  AR: { nombre: 'Argentina',flag: '🇦🇷' },
+};
 
 // ── Fase helpers ────────────────────────────────────────────────────────────
 function faseCssClass(faseNum) {
@@ -276,6 +303,7 @@ async function init() {
     ranking = calcularRanking(participants, resultados);
     renderStats(ranking, stats);
     renderWinners(ranking, stats);
+    renderPaisFilter(ranking);
     renderMain(ranking, resultados, stats);
   } catch(e) {
     document.getElementById('mainContent').innerHTML =
@@ -296,6 +324,39 @@ async function setView(v) {
   document.getElementById('btn-active').classList.toggle('active', v === 'active');
   const stats = getStats(resultados);
   renderMain(ranking, resultados, stats);
+}
+
+function setPais(p) {
+  currentPais = p;
+  // Actualizar botones activos
+  document.querySelectorAll('#paisFilterBar .pais-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.id === 'pais-btn-' + p);
+  });
+  const stats = getStats(resultados);
+  renderMain(ranking, resultados, stats);
+}
+
+function renderPaisFilter(ranking) {
+  const bar = document.getElementById('paisFilterBar');
+  if (!bar) return;
+
+  // Contar por país
+  const counts = {};
+  ranking.forEach(r => {
+    const p = r.pais || '';
+    if (p) counts[p] = (counts[p] || 0) + 1;
+  });
+
+  // Solo mostrar países que tienen participantes
+  const paisesPresentes = Object.keys(PAIS_INFO).filter(p => counts[p]);
+  if (!paisesPresentes.length) { bar.closest('.toolbar').style.display = 'none'; return; }
+
+  let html = `<button class="pais-btn ${currentPais === '' ? 'active' : ''}" id="pais-btn-" onclick="setPais('')">🌐 Todos <span class="pais-cnt">(${ranking.length})</span></button>`;
+  paisesPresentes.forEach(p => {
+    const info = PAIS_INFO[p];
+    html += `<button class="pais-btn ${currentPais === p ? 'active' : ''}" id="pais-btn-${p}" onclick="setPais('${p}')">${info.flag} ${info.nombre} <span class="pais-cnt">(${counts[p]})</span></button>`;
+  });
+  bar.innerHTML = html;
 }
 
 // ── Stats ────────────────────────────────────────────────────────────────────
@@ -415,9 +476,12 @@ function faseLabel(f, fase) {
 
 // ── Render main ──────────────────────────────────────────────────────────────
 function renderMain(ranking, resultados, stats) {
-  const baseList = currentView === 'active'
+  let baseList = currentView === 'active'
     ? ranking.filter(r => r.puntosTotales > 0)
     : ranking;
+  if (currentPais) {
+    baseList = baseList.filter(r => r.pais === currentPais);
+  }
   const list = searchQuery
     ? baseList.filter(r =>
         (r.correo || '').includes(searchQuery) ||
@@ -483,7 +547,7 @@ function renderMain(ranking, resultados, stats) {
         <td><span class="pos-badge ${posClass}">${r.posicion}</span></td>
         <td class="left">
           <div style="font-weight:700">${r.nombreCompleto || r.correo}</div>
-          <div style="font-size:.7rem;color:var(--gray)">${r.correo || ''}</div>
+          <div style="font-size:.7rem;color:var(--gray)">${r.correo || ''}${r.pais ? ' &nbsp;' + (PAIS_INFO[r.pais]?.flag || '') + ' ' + (PAIS_INFO[r.pais]?.nombre || '') : ''}</div>
         </td>
         <td><span class="pts-big">${r.puntosTotales}</span></td>
         <td><span class="aciertos-badge">✅ ${r.aciertos}</span></td>

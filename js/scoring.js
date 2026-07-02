@@ -25,6 +25,8 @@ function mergeParticipantsByEmail(participants) {
       if (!(existing.nombreCompleto || '').trim() && (p.nombreCompleto || '').trim()) {
         existing.nombreCompleto = p.nombreCompleto;
       }
+      // Preservar país si no se tenía antes
+      if (!existing.pais && p.pais) { existing.pais = p.pais; existing.orden = p.orden; }
     } else {
       byEmail.set(key, { ...p, pronosticos: { ...p.pronosticos } });
     }
@@ -66,6 +68,17 @@ function parseCSVText(text) {
   const iNom = idx('Nombres');
   const iApe = idx('Apellidos');
   const iCor = idx('Correo electrónico');
+  const iOrd = idx('No. de orden');
+
+  // País derivado del primer dígito del número de orden
+  function paisDeOrden(orden) {
+    const s = String(orden || '').trim();
+    if (s.startsWith('2')) return 'CO';
+    if (s.startsWith('3')) return 'CL';
+    if (s.startsWith('4')) return 'MX';
+    if (s.startsWith('5')) return 'AR';
+    return null;
+  }
 
   // Valores que se consideran "sin pronóstico" aunque aparezcan en el CSV
   // (celdas vacías, guiones, N/A, etc.)
@@ -85,6 +98,7 @@ function parseCSVText(text) {
       // Solo valores enteros no-negativos son válidos como goles
       if (!isNaN(num) && num >= 0) pronosticos[col] = num;
     });
+    const orden = iOrd >= 0 ? (row[iOrd] || '').toString().trim() : '';
     return {
       id:            row[0] || ('p-' + n),
       nombres:       iNom >= 0 ? (row[iNom]  || '') : '',
@@ -94,6 +108,8 @@ function parseCSVText(text) {
         (iNom >= 0 ? row[iNom]  : '') || '',
         (iApe >= 0 ? row[iApe]  : '') || ''
       ].join(' ').trim(),
+      orden,
+      pais: paisDeOrden(orden),
       pronosticos,
     };
   }).filter(p => p.nombres || p.correo);
