@@ -134,10 +134,10 @@ const PARTIDOS = [
   { id:  99, fecha:'2026-07-11', dia:'Sábado',    local:'Francia',   visitante:'Inglaterra',   fase:9 },
   { id: 100, fecha:'2026-07-11', dia:'Sábado',    local:'Argentina', visitante:'Suiza',   fase:9 },
   // ── FASE FINAL (Jul 14–19) – 5 ptos ───────────────────────────
-  { id: 101, fecha:'2026-07-14', dia:'Martes',    local:'W97',   visitante:'W98',   fase:9 },
-  { id: 102, fecha:'2026-07-15', dia:'Miércoles', local:'W99',   visitante:'W100',  fase:9 },
-  { id: 103, fecha:'2026-07-18', dia:'Sábado',    local:'RU101', visitante:'RU102', fase:10 },
-  { id: 104, fecha:'2026-07-19', dia:'Domingo',   local:'W101',  visitante:'W102',  fase:10 },
+  { id: 101, fecha:'2026-07-14', dia:'Martes',    local:'Francia',   visitante:'España',   fase:9 },
+  { id: 102, fecha:'2026-07-15', dia:'Miércoles', local:'Inglaterra', visitante:'Argentina',  fase:9 },
+  { id: 103, fecha:'2026-07-18', dia:'Sábado',    local:'Francia',   visitante:'Inglaterra', fase:10 },
+  { id: 104, fecha:'2026-07-19', dia:'Domingo',   local:'España',    visitante:'Argentina',  fase:10 },
 ];
 
 // Enriquecer con datos de fase
