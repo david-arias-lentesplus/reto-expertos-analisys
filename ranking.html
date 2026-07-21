@@ -333,6 +333,7 @@ function setPais(p) {
     btn.classList.toggle('active', btn.id === 'pais-btn-' + p);
   });
   const stats = getStats(resultados);
+  renderWinners(ranking, stats);
   renderMain(ranking, resultados, stats);
 }
 
@@ -378,26 +379,38 @@ function renderStats(ranking, stats) {
 
 // ── Ganadores por fase ────────────────────────────────────────────────────────
 function renderWinners(ranking, stats) {
-  if (!ranking.length) return;
+  // Filtrar por país seleccionado
+  const filtered = currentPais ? ranking.filter(r => r.pais === currentPais) : ranking;
+
+  if (!filtered.length) {
+    const section = document.getElementById('winnersSection');
+    section.innerHTML = '';
+    section.style.display = 'none';
+    return;
+  }
 
   const section = document.getElementById('winnersSection');
 
-  // Ganador global
-  const overallWinner = ranking[0];
-  const overallTied   = ranking.filter(r => r.posicion === 1);
+  // Ranking ordenado dentro del país filtrado (o global si no hay filtro)
+  const ordered = [...filtered].sort((a, b) => b.puntosTotales - a.puntosTotales);
+
+  // Ganador global (dentro del filtro)
+  const overallWinner = ordered[0];
+  const maxTotal = overallWinner.puntosTotales;
+  const overallTied   = ordered.filter(r => r.puntosTotales === maxTotal);
 
   // Ganador por fase
   const faseNums = Object.keys(FASES).map(Number);
 
-  // Para cada fase, encontrar quién tiene más puntos en porFase[f]
+  // Para cada fase, encontrar quién tiene más puntos en porFase[f] (dentro del filtro)
   function winnersOfFase(f) {
     let maxPts = 0;
-    ranking.forEach(r => {
+    filtered.forEach(r => {
       const fd = r.porFase[f];
       if (fd && fd.puntos > maxPts) maxPts = fd.puntos;
     });
     if (maxPts === 0) return null; // fase sin resultados aún
-    return { pts: maxPts, ganadores: ranking.filter(r => r.porFase[f] && r.porFase[f].puntos === maxPts) };
+    return { pts: maxPts, ganadores: filtered.filter(r => r.porFase[f] && r.porFase[f].puntos === maxPts) };
   }
 
   // Cuántas fases tienen resultados
@@ -407,7 +420,10 @@ function renderWinners(ranking, stats) {
     return partidosDeFase.some(p => resultados[p.id] !== undefined);
   });
 
-  let html = `<div class="winners-title">🥇 Ganadores por Tanda / Fase</div>
+  const paisLabel = currentPais && PAIS_INFO[currentPais]
+    ? ` — ${PAIS_INFO[currentPais].flag} ${PAIS_INFO[currentPais].nombre}`
+    : '';
+  let html = `<div class="winners-title">🥇 Ganadores por Tanda / Fase${paisLabel}</div>
   <div class="winners-grid">`;
 
   // Tarjeta global PRIMERO
