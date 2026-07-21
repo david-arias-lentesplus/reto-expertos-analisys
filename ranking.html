@@ -197,6 +197,14 @@
     .pais-btn.active { background:var(--navy); color:#fff; border-color:var(--navy); }
     .pais-btn .pais-cnt { font-size:.72rem; opacity:.75; }
 
+    /* Fabricante filter */
+    .fab-select {
+      border:1.5px solid #bfdbfe; border-radius:20px; background:#fff;
+      padding:5px 13px; font-size:.8rem; font-weight:700; color:#1e3a8a;
+      cursor:pointer; outline:none;
+    }
+    .fab-select:focus { border-color:#1e3a8a; box-shadow:0 0 0 2px rgba(30,58,138,.12); }
+
     @media(max-width:640px) {
       .winners-grid { grid-template-columns:1fr 1fr; }
       .podium { gap:8px; }
@@ -244,6 +252,13 @@
     <button class="pais-btn active" id="pais-btn-" onclick="setPais('')">🌐 Todos</button>
   </div>
 </div>
+<!-- FILTRO FABRICANTE -->
+<div class="toolbar" style="background:#eff6ff;border-bottom:2px solid #bfdbfe;padding:8px 24px;gap:8px;">
+  <span style="font-size:.75rem;color:#1e3a8a;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">🏭 Fabricante:</span>
+  <select class="fab-select" id="fabFilterSel" onchange="setFabricante(this.value)">
+    <option value="">🏭 Todos los fabricantes</option>
+  </select>
+</div>
 
 <!-- GANADORES POR FASE -->
 <div class="winners-section" id="winnersSection" style="display:none"></div>
@@ -262,6 +277,8 @@ let resultados = {};
 let currentView = 'all';
 let searchQuery = '';
 let currentPais = '';
+let currentFabricante = '';
+let fabricantesPorEmail = new Map(); // email (lowercase) -> Set de fabricantes
 
 const PAIS_INFO = {
   CO: { nombre: 'Colombia', flag: '🇨🇴' },
@@ -299,16 +316,48 @@ async function init() {
   const stats = getStats(resultados);
 
   try {
-    const participants = await fetchPronosticos();
+    const [participants] = await Promise.all([
+      fetchPronosticos(),
+      loadFabricantesPorEmail(),
+    ]);
     ranking = calcularRanking(participants, resultados);
+    asignarFabricantes(ranking);
     renderStats(ranking, stats);
     renderWinners(ranking, stats);
     renderPaisFilter(ranking);
+    renderFabFilter(ranking);
     renderMain(ranking, resultados, stats);
   } catch(e) {
     document.getElementById('mainContent').innerHTML =
       `<div class="loading-box" style="color:#dc2626">❌ Error: ${e.message || e}</div>`;
   }
+}
+
+// ── Cruce con datos de ventas: obtener fabricantes por email ─────────────────
+async function loadFabricantesPorEmail() {
+  fabricantesPorEmail = new Map();
+  try {
+    const res = await fetch('/api/clientes');
+    const json = await res.json();
+    if (!res.ok || json.error) throw new Error(json.error || ('HTTP ' + res.status));
+    (json.rows || []).forEach(row => {
+      const email = (row.email || '').toLowerCase().trim();
+      if (!email || !row.fabricantes) return;
+      if (!fabricantesPorEmail.has(email)) fabricantesPorEmail.set(email, new Set());
+      const set = fabricantesPorEmail.get(email);
+      row.fabricantes.split(',').map(f => f.trim()).filter(Boolean).forEach(f => set.add(f));
+    });
+  } catch (e) {
+    console.warn('[Fabricantes] No se pudo cruzar con ventas:', e.message || e);
+  }
+}
+
+function asignarFabricantes(ranking) {
+  ranking.forEach(r => {
+    const email = (r.correo || '').toLowerCase().trim();
+    const set = fabricantesPorEmail.get(email);
+    r.fabricantes = set ? [...set].sort() : [];
+  });
 }
 
 function reload() {
@@ -360,6 +409,30 @@ function renderPaisFilter(ranking) {
   bar.innerHTML = html;
 }
 
+function setFabricante(f) {
+  currentFabricante = f;
+  const stats = getStats(resultados);
+  renderWinners(ranking, stats);
+  renderMain(ranking, resultados, stats);
+}
+
+function renderFabFilter(ranking) {
+  const sel = document.getElementById('fabFilterSel');
+  if (!sel) return;
+
+  // Fabricantes presentes entre los participantes (con al menos 1 orden cruzada)
+  const fabs = [...new Set(ranking.flatMap(r => r.fabricantes || []))].sort();
+
+  if (!fabs.length) {
+    sel.closest('.toolbar').style.display = 'none';
+    return;
+  }
+
+  sel.innerHTML = `<option value="">🏭 Todos los fabricantes</option>` +
+    fabs.map(f => `<option value="${f}">${f}</option>`).join('');
+  if ([...sel.options].some(o => o.value === currentFabricante)) sel.value = currentFabricante;
+}
+
 // ── Stats ────────────────────────────────────────────────────────────────────
 function renderStats(ranking, stats) {
   const maxPts = ranking.length ? ranking[0].puntosTotales : 0;
@@ -379,8 +452,11 @@ function renderStats(ranking, stats) {
 
 // ── Ganadores por fase ────────────────────────────────────────────────────────
 function renderWinners(ranking, stats) {
-  // Filtrar por país seleccionado
-  const filtered = currentPais ? ranking.filter(r => r.pais === currentPais) : ranking;
+  // Filtrar por país y fabricante seleccionados
+  let filtered = currentPais ? ranking.filter(r => r.pais === currentPais) : ranking;
+  if (currentFabricante) {
+    filtered = filtered.filter(r => (r.fabricantes || []).includes(currentFabricante));
+  }
 
   if (!filtered.length) {
     const section = document.getElementById('winnersSection');
@@ -423,7 +499,8 @@ function renderWinners(ranking, stats) {
   const paisLabel = currentPais && PAIS_INFO[currentPais]
     ? ` — ${PAIS_INFO[currentPais].flag} ${PAIS_INFO[currentPais].nombre}`
     : '';
-  let html = `<div class="winners-title">🥇 Ganadores por Tanda / Fase${paisLabel}</div>
+  const fabLabel = currentFabricante ? ` — 🏭 ${currentFabricante}` : '';
+  let html = `<div class="winners-title">🥇 Ganadores por Tanda / Fase${paisLabel}${fabLabel}</div>
   <div class="winners-grid">`;
 
   // Tarjeta global PRIMERO
@@ -498,6 +575,9 @@ function renderMain(ranking, resultados, stats) {
   if (currentPais) {
     baseList = baseList.filter(r => r.pais === currentPais);
   }
+  if (currentFabricante) {
+    baseList = baseList.filter(r => (r.fabricantes || []).includes(currentFabricante));
+  }
   const list = searchQuery
     ? baseList.filter(r =>
         (r.correo || '').includes(searchQuery) ||
@@ -563,7 +643,7 @@ function renderMain(ranking, resultados, stats) {
         <td><span class="pos-badge ${posClass}">${r.posicion}</span></td>
         <td class="left">
           <div style="font-weight:700">${r.nombreCompleto || r.correo}</div>
-          <div style="font-size:.7rem;color:var(--gray)">${r.correo || ''}${r.pais ? ' &nbsp;' + (PAIS_INFO[r.pais]?.flag || '') + ' ' + (PAIS_INFO[r.pais]?.nombre || '') : ''}</div>
+          <div style="font-size:.7rem;color:var(--gray)">${r.correo || ''}${r.pais ? ' &nbsp;' + (PAIS_INFO[r.pais]?.flag || '') + ' ' + (PAIS_INFO[r.pais]?.nombre || '') : ''}${(r.fabricantes && r.fabricantes.length) ? ' &nbsp;🏭 ' + r.fabricantes.join(', ') : ''}</div>
         </td>
         <td><span class="pts-big">${r.puntosTotales}</span></td>
         <td><span class="aciertos-badge">✅ ${r.aciertos}</span></td>
